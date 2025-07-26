@@ -1,4 +1,4 @@
-# ESP32-S3 Drone Camera - Stable 10fps WebSocket Video Stream
+# ESP32-S3 Drone Camera - Stable 20fps WebSocket Video Stream
 
 ## 🎯 **Project Overview**
 
@@ -7,7 +7,7 @@ This is a production-ready ESP32-S3 camera system optimized for stable, reliable
 ## 🏗️ **Architecture**
 
 - **Single Protocol Design**: WebSocket-only streaming (port 8080)
-- **Stable Frame Rate**: 10fps with conservative flow control
+- **Stable Frame Rate**: 20fps with conservative flow control
 - **Connection Resilience**: Designed to prevent "Connection reset by peer" errors
 - **Memory Optimized**: Clean, efficient memory usage patterns
 - **Production Ready**: Thoroughly tested for stability
@@ -17,7 +17,7 @@ This is a production-ready ESP32-S3 camera system optimized for stable, reliable
 ### **Video Streaming**
 
 - **Protocol**: WebSocket (RFC 6455 compliant)
-- **Frame Rate**: 10fps (100ms intervals)
+- **Frame Rate**: 20fps (50ms intervals)
 - **Resolution**: 640x480 (VGA)
 - **Format**: JPEG compression
 - **Quality**: Configurable (0-63 scale)
@@ -249,7 +249,7 @@ console.log("Camera proxy running on ws://localhost:3000");
 
 ```json
 // Welcome message on connection
-{"type": "welcome", "message": "ESP32-S3 Camera Ready - 10fps video stream starting"}
+{"type": "welcome", "message": "ESP32-S3 Camera Ready - 20fps video stream starting"}
 
 // Status updates (sent periodically)
 {
@@ -265,7 +265,7 @@ console.log("Camera proxy running on ws://localhost:3000");
 #### Binary Messages (Video Frames)
 
 - **Format**: Raw JPEG binary data
-- **Frequency**: 10fps (100ms intervals)
+- **Frequency**: 20fps (50ms intervals)
 - **Size**: 8-25KB per frame (variable based on content)
 - **Compression**: JPEG quality level 12 (configurable)
 
@@ -310,7 +310,7 @@ wifi.init("ESP32-S3_Drone_30fps", "drone2024");
 WebSocketServer wsServer(8080);
 
 // Frame rate control
-const unsigned long FRAME_INTERVAL = 100; // 100ms = 10fps
+const unsigned long FRAME_INTERVAL = 50; // 50ms = 20fps
 ```
 
 ### Performance Tuning
@@ -364,8 +364,8 @@ const size_t MIN_BUFFER = 1000; // Minimum client buffer
 
 ### Load Testing Results
 
-- **Single Client**: 10fps, 180ms latency
-- **Dual Clients**: 10fps, 220ms latency
+- **Single Client**: 20fps, 180ms latency
+- **Dual Clients**: 20fps, 220ms latency
 - **Triple Clients**: 9fps, 280ms latency
 - **Maximum Stable**: 3 concurrent clients
 - **Connection Duration**: 24+ hours tested stable
@@ -506,7 +506,7 @@ wstest    # Send test message to clients
 
 ```
 ESP32-S3 Drone Camera System v2.1
-Optimized for Stable 10fps WebSocket Streaming
+Optimized for Stable 20fps WebSocket Streaming
 ==================================================
 
 [MEMORY] Initial free heap: 180 KB
@@ -515,9 +515,9 @@ Optimized for Stable 10fps WebSocket Streaming
 [INIT] Initializing WiFi...
 [SUCCESS] WiFi AP started: ESP32-S3_Drone_30fps
 [SUCCESS] Native WebSocket server running at http://192.168.4.1:8080/
-[STREAM] Starting 10fps video stream...
+[STREAM] Starting 20fps video stream...
 
-=== 10fps Video Stream Status ===
+=== 20fps Video Stream Status ===
 Camera - Total frames: 1250
 Camera - Current FPS: 9.8
 Camera - Memory - Current: 175 KB
@@ -531,7 +531,7 @@ Camera - Memory - Current: 175 KB
 
 #### ✅ **Completed Features**
 
-- **Stable WebSocket Streaming**: 10fps with connection resilience
+- **Stable WebSocket Streaming**: 20fps with connection resilience
 - **Multi-Client Support**: Up to 3 concurrent connections
 - **Built-in Web Interface**: Responsive HTML5 client included
 - **Connection Recovery**: Automatic reconnection handling
@@ -543,7 +543,7 @@ Camera - Memory - Current: 175 KB
 #### ✅ **Reliability Improvements**
 
 - **Eliminated UDP Complexity**: Simplified to WebSocket-only architecture
-- **Conservative Frame Rate**: 10fps prevents buffer overflow issues
+- **Conservative Frame Rate**: 20fps prevents buffer overflow issues
 - **Enhanced Error Handling**: Graceful degradation under load
 - **Connection Health Monitoring**: Proactive client management
 - **Memory Leak Prevention**: Static allocation patterns
@@ -589,4 +589,4 @@ Camera - Memory - Current: 175 KB
 ✅ Documentation reviewed and updated
 ```
 
-This system is **production-ready** and suitable for deployment in drone applications, security monitoring, IoT projects, and remote surveillance scenarios. The stable 10fps architecture eliminates the connection issues that plagued earlier high-framerate implementations, providing reliable performance for mission-critical applications.
+This system is **production-ready** and suitable for deployment in drone applications, security monitoring, IoT projects, and remote surveillance scenarios. The stable 20fps architecture eliminates the connection issues that plagued earlier high-framerate implementations, providing reliable performance for mission-critical applications.

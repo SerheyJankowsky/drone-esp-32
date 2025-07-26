@@ -374,7 +374,7 @@ void WebSocketServer::handleWebSocketUpgrade(WiFiClient& client, const String& r
     Serial.printf("[WS] WebSocket client %d connected successfully\n", slot);
     
     // Send welcome message
-    String welcomeMsg = "ESP32-S3 Camera Ready - 10fps video stream starting";
+    String welcomeMsg = "ESP32-S3 Camera Ready - 20fps video stream starting";
     sendWebSocketFrame(wsClients_[slot], welcomeMsg);
 }
 
@@ -397,7 +397,7 @@ void WebSocketServer::sendWebPage(WiFiClient& client) {
     client.println("</style></head>");
     client.println("<body>");
     client.println("<div class='container'>");
-    client.println("<h1>🚁 ESP32-S3 Drone Camera - 10fps Live Stream</h1>");
+    client.println("<h1>🚁 ESP32-S3 Drone Camera - 20fps Live Stream</h1>");
     client.println("<div id='status'>Connecting to WebSocket...</div>");
     client.println("<div class='info'>");
     client.println("<div class='info-box'><strong>Frame:</strong><br><span id='frame-count'>0</span></div>");
@@ -425,7 +425,7 @@ void WebSocketServer::sendWebPage(WiFiClient& client) {
     client.println("    ");
     client.println("    ws.onopen = function() {");
     client.println("      console.log('WebSocket connected');");
-    client.println("      status.innerHTML = '✅ Connected - Receiving 30fps video stream';");
+    client.println("      status.innerHTML = '✅ Connected - Receiving 20fps video stream';");
     client.println("      status.style.background = 'linear-gradient(45deg, #4CAF50, #45a049)';");
     client.println("    };");
     client.println("    ");
@@ -482,9 +482,9 @@ void WebSocketServer::streamVideoFrame(camera_fb_t* fb) {
     
     frameCounter_++;
     
-    // Adaptive frame rate - more conservative for stability
+    // Adaptive frame rate - optimized for 20fps
     unsigned long currentTime = millis();
-    if (currentTime - lastFrameTime_ < 100) { // Target ~10fps (100ms between frames) for stability
+    if (currentTime - lastFrameTime_ < 50) { // Target ~20fps (50ms between frames)
         return; // Skip this frame to maintain reasonable rate
     }
     lastFrameTime_ = currentTime;
@@ -566,7 +566,7 @@ void WebSocketServer::sendStatusUpdate() {
     String statusMessage = String("{") +
         "\"type\":\"status\"," +
         "\"frame\":" + frameCounter_ + "," +
-        "\"fps\":10," +
+        "\"fps\":20," +
         "\"timestamp\":" + millis() + "," +
         "\"heap\":" + ESP.getFreeHeap() + "," +
         "\"clients\":" + getConnectedClients() +
