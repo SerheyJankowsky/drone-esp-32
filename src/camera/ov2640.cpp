@@ -1,0 +1,444 @@
+// src/camera/ov2640.cpp
+#include "ov2640.h"
+#include <algorithm>
+
+static const char* TAG = "OV2640";
+
+OV2640Camera::OV2640Camera() {
+    stats_mutex_ = xSemaphoreCreateMutex();
+    if (stats_mutex_ == nullptr) {
+        ESP_LOGE(TAG, "Failed to create statistics mutex");
+    }
+    initializeConfig();
+    stats_.reset();
+}
+
+OV2640Camera::~OV2640Camera() {
+    deinitialize();
+    if (stats_mutex_ != nullptr) {
+        vSemaphoreDelete(stats_mutex_);
+    }
+}
+
+void OV2640Camera::initializeConfig() {
+    // Initialize camera configuration with optimized settings for 30fps
+    config_.ledc_channel = LEDC_CHANNEL_0;
+    config_.ledc_timer = LEDC_TIMER_0;
+    config_.pin_d0 = CameraPins::Y2;
+    config_.pin_d1 = CameraPins::Y3;
+    config_.pin_d2 = CameraPins::Y4;
+    config_.pin_d3 = CameraPins::Y5;
+    config_.pin_d4 = CameraPins::Y6;
+    config_.pin_d5 = CameraPins::Y7;
+    config_.pin_d6 = CameraPins::Y8;
+    config_.pin_d7 = CameraPins::Y9;
+    config_.pin_xclk = CameraPins::XCLK;
+    config_.pin_pclk = CameraPins::PCLK;
+    config_.pin_vsync = CameraPins::VSYNC;
+    config_.pin_href = CameraPins::HREF;
+    config_.pin_sccb_sda = CameraPins::SIOD;
+    config_.pin_sccb_scl = CameraPins::SIOC;
+    config_.pin_pwdn = CameraPins::PWDN;
+    config_.pin_reset = CameraPins::RESET;
+    config_.xclk_freq_hz = CameraConfig::XCLK_FREQ_HZ;
+    config_.pixel_format = PIXFORMAT_JPEG;
+    
+    // Optimized settings for 30fps
+    config_.frame_size = FRAMESIZE_VGA;  // 640x480 for better 30fps performance
+    config_.jpeg_quality = CameraConfig::JPEG_QUALITY;
+    config_.fb_count = CameraConfig::FRAME_BUFFER_COUNT;
+    config_.fb_location = CAMERA_FB_IN_PSRAM;
+    config_.grab_mode = CAMERA_GRAB_LATEST;  // Always get latest frame for real-time
+}
+
+bool OV2640Camera::initialize() {
+    if (initialized_.load()) {
+        ESP_LOGW(TAG, "Camera already initialized");
+        return true;
+    }
+
+    ESP_LOGI(TAG, "Initializing OV2640 camera for 30fps operation...");
+    
+    if (!checkMemoryConstraints()) {
+        last_error_ = CameraError::MEMORY_ALLOCATION_FAILED;
+        last_error_message_ = "Insufficient memory for camera initialization";
+        return false;
+    }
+
+    // Initialize the camera
+    esp_err_t err = esp_camera_init(&config_);
+    if (err != ESP_OK) {
+        last_error_ = CameraError::INIT_FAILED;
+        last_error_message_ = "esp_camera_init failed with error: " + std::to_string(err);
+        ESP_LOGE(TAG, "Camera init failed with error 0x%x", err);
+        return false;
+    }
+    
+    if (!configureSensor()) {
+        esp_camera_deinit();
+        return false;
+    }
+    
+    initialized_.store(true);
+    stats_.reset();
+    last_frame_time_ = millis();
+    
+    ESP_LOGI(TAG, "Camera initialized successfully for 30fps operation!");
+    printCameraInfo();
+    
+    return true;
+}
+
+bool OV2640Camera::configureSensor() {
+    sensor_t* sensor = esp_camera_sensor_get();
+    if (sensor == nullptr) {
+        last_error_ = CameraError::SENSOR_NOT_FOUND;
+        last_error_message_ = "Failed to get camera sensor";
+        ESP_LOGE(TAG, "Failed to get camera sensor");
+        return false;
+    }
+    
+    // Optimized sensor settings for high frame rate and quality
+    sensor->set_brightness(sensor, 0);      // -2 to 2
+    sensor->set_contrast(sensor, 1);        // -2 to 2, slight increase for better definition
+    sensor->set_saturation(sensor, 0);      // -2 to 2
+    sensor->set_special_effect(sensor, 0);  // No effect
+    sensor->set_whitebal(sensor, 1);        // Auto white balance
+    sensor->set_awb_gain(sensor, 1);        // Auto white balance gain
+    sensor->set_wb_mode(sensor, 0);         // Auto mode
+    sensor->set_exposure_ctrl(sensor, 1);   // Auto exposure
+    sensor->set_aec2(sensor, 1);            // Enable AEC2 for better performance
+    sensor->set_ae_level(sensor, 0);        // Auto exposure level
+    sensor->set_aec_value(sensor, 200);     // Faster exposure for 30fps
+    sensor->set_gain_ctrl(sensor, 1);       // Auto gain
+    sensor->set_agc_gain(sensor, 0);        // Auto gain ceiling
+    sensor->set_gainceiling(sensor, (gainceiling_t)2); // Moderate gain ceiling
+    sensor->set_bpc(sensor, 1);             // Black pixel correction
+    sensor->set_wpc(sensor, 1);             // White pixel correction
+    sensor->set_raw_gma(sensor, 1);         // Raw gamma
+    sensor->set_lenc(sensor, 1);            // Lens correction
+    sensor->set_hmirror(sensor, 0);         // No horizontal mirror
+    sensor->set_vflip(sensor, 0);           // No vertical flip
+    sensor->set_dcw(sensor, 1);             // Downsize enable
+    sensor->set_colorbar(sensor, 0);        // No color bar
+    
+    ESP_LOGI(TAG, "Sensor configured for optimal 30fps performance");
+    return true;
+}
+
+void OV2640Camera::deinitialize() {
+    if (!initialized_.load()) {
+        return;
+    }
+    
+    streaming_.store(false);
+    esp_camera_deinit();
+    initialized_.store(false);
+    
+    ESP_LOGI(TAG, "Camera deinitialized");
+}
+
+std::unique_ptr<camera_fb_t, std::function<void(camera_fb_t*)>> OV2640Camera::captureFrame() {
+    if (!initialized_.load()) {
+        last_error_ = CameraError::CAPTURE_FAILED;
+        last_error_message_ = "Camera not initialized";
+        ESP_LOGW(TAG, "Camera not initialized");
+        return nullptr;
+    }
+    
+    frame_start_time_ = millis();
+    
+    // Check if we should skip this frame to maintain target FPS
+    if (frame_start_time_ - last_frame_time_ < CameraConfig::FRAME_INTERVAL_MS) {
+        // Frame rate limiting - skip this capture
+        return nullptr;
+    }
+    
+    camera_fb_t* fb = esp_camera_fb_get();
+    if (!fb) {
+        last_error_ = CameraError::CAPTURE_FAILED;
+        last_error_message_ = "esp_camera_fb_get failed";
+        
+        if (xSemaphoreTake(stats_mutex_, pdMS_TO_TICKS(10)) == pdTRUE) {
+            stats_.dropped_frames++;
+            xSemaphoreGive(stats_mutex_);
+        }
+        
+        ESP_LOGW(TAG, "Frame capture failed");
+        return nullptr;
+    }
+    
+    unsigned long capture_time = millis() - frame_start_time_;
+    updateStats(fb, capture_time);
+    last_frame_time_ = frame_start_time_;
+    
+    // Return smart pointer with custom deleter
+    return std::unique_ptr<camera_fb_t, std::function<void(camera_fb_t*)>>(
+        fb, [](camera_fb_t* frame) {
+            if (frame) {
+                esp_camera_fb_return(frame);
+            }
+        }
+    );
+}
+
+bool OV2640Camera::captureFrameAsync(FrameCallback callback) {
+    if (!callback) {
+        ESP_LOGW(TAG, "Invalid callback provided");
+        return false;
+    }
+    
+    auto frame = captureFrame();
+    if (frame) {
+        callback(frame.get());
+        return true;
+    }
+    
+    return false;
+}
+
+bool OV2640Camera::setFrameSize(framesize_t size) {
+    if (!isValidFrameSize(size)) {
+        last_error_ = CameraError::INVALID_CONFIG;
+        last_error_message_ = "Invalid frame size";
+        return false;
+    }
+    
+    sensor_t* sensor = esp_camera_sensor_get();
+    if (!sensor) {
+        last_error_ = CameraError::SENSOR_NOT_FOUND;
+        return false;
+    }
+    
+    int result = sensor->set_framesize(sensor, size);
+    if (result == 0) {
+        config_.frame_size = size;
+        ESP_LOGI(TAG, "Frame size changed to %d", size);
+        return true;
+    }
+    
+    last_error_ = CameraError::INVALID_CONFIG;
+    last_error_message_ = "Failed to set frame size";
+    return false;
+}
+
+bool OV2640Camera::setJpegQuality(uint8_t quality) {
+    if (quality > 63) {
+        last_error_ = CameraError::INVALID_CONFIG;
+        last_error_message_ = "JPEG quality must be 0-63";
+        return false;
+    }
+    
+    sensor_t* sensor = esp_camera_sensor_get();
+    if (!sensor) {
+        last_error_ = CameraError::SENSOR_NOT_FOUND;
+        return false;
+    }
+    
+    int result = sensor->set_quality(sensor, quality);
+    if (result == 0) {
+        config_.jpeg_quality = quality;
+        ESP_LOGI(TAG, "JPEG quality changed to %d", quality);
+        return true;
+    }
+    
+    last_error_ = CameraError::INVALID_CONFIG;
+    last_error_message_ = "Failed to set JPEG quality";
+    return false;
+}
+
+bool OV2640Camera::setPixelFormat(pixformat_t format) {
+    if (format != PIXFORMAT_JPEG && format != PIXFORMAT_RGB565) {
+        last_error_ = CameraError::INVALID_CONFIG;
+        last_error_message_ = "Unsupported pixel format";
+        return false;
+    }
+    
+    sensor_t* sensor = esp_camera_sensor_get();
+    if (!sensor) {
+        last_error_ = CameraError::SENSOR_NOT_FOUND;
+        return false;
+    }
+    
+    int result = sensor->set_pixformat(sensor, format);
+    if (result == 0) {
+        config_.pixel_format = format;
+        ESP_LOGI(TAG, "Pixel format changed");
+        return true;
+    }
+    
+    last_error_ = CameraError::INVALID_CONFIG;
+    last_error_message_ = "Failed to set pixel format";
+    return false;
+}
+
+FrameStats OV2640Camera::getStatistics() const {
+    FrameStats stats_copy;
+    if (xSemaphoreTake(stats_mutex_, pdMS_TO_TICKS(100)) == pdTRUE) {
+        stats_copy = stats_;
+        xSemaphoreGive(stats_mutex_);
+    }
+    return stats_copy;
+}
+
+void OV2640Camera::resetStatistics() {
+    if (xSemaphoreTake(stats_mutex_, pdMS_TO_TICKS(100)) == pdTRUE) {
+        stats_.reset();
+        xSemaphoreGive(stats_mutex_);
+    }
+    ESP_LOGI(TAG, "Statistics reset");
+}
+
+void OV2640Camera::logDetailedStats() const {
+    FrameStats stats = getStatistics();
+    
+    ESP_LOGI(TAG, "=== Camera Performance Statistics ===");
+    ESP_LOGI(TAG, "Total frames: %lu", stats.total_frames);
+    ESP_LOGI(TAG, "Dropped frames: %lu (%.2f%%)", 
+             stats.dropped_frames, 
+             stats.total_frames > 0 ? (stats.dropped_frames * 100.0f / stats.total_frames) : 0.0f);
+    ESP_LOGI(TAG, "Current FPS: %.2f", stats.current_fps);
+    ESP_LOGI(TAG, "Average frame size: %lu bytes", stats.avg_frame_size);
+    ESP_LOGI(TAG, "Min free heap: %lu bytes", stats.min_heap);
+    ESP_LOGI(TAG, "Max frame time: %lu ms", stats.max_frame_time);
+    ESP_LOGI(TAG, "Uptime: %lu seconds", (millis() - stats.last_reset_time) / 1000);
+    ESP_LOGI(TAG, "=====================================");
+}
+
+void OV2640Camera::logFrameInfo(camera_fb_t* fb) const {
+    if (!fb) {
+        ESP_LOGW(TAG, "Invalid frame buffer");
+        return;
+    }
+    
+    FrameStats stats = getStatistics();
+    uint32_t free_heap = ESP.getFreeHeap();
+    uint32_t free_psram = ESP.getFreePsram();
+    
+    ESP_LOGI(TAG, "Frame #%lu: %ux%u, %u bytes, %.1f FPS | Heap: %lu, PSRAM: %lu", 
+             stats.total_frames,
+             fb->width, fb->height, fb->len,
+             stats.current_fps,
+             free_heap, free_psram);
+             
+    // Warning if memory is getting low
+    if (free_heap < CameraConfig::MIN_FREE_HEAP) {
+        logPerformanceWarning("Low heap memory detected");
+    }
+}
+
+void OV2640Camera::printCameraInfo() const {
+    sensor_t* sensor = esp_camera_sensor_get();
+    if (!sensor) {
+        ESP_LOGW(TAG, "Cannot get sensor information");
+        return;
+    }
+    
+    ESP_LOGI(TAG, "=== Camera Configuration ===");
+    ESP_LOGI(TAG, "Sensor ID: 0x%02X", sensor->id.PID);
+    
+    // Get frame size dimensions
+    const char* frame_size_names[] = {
+        "96x96", "QQVGA", "QCIF", "HQVGA", "240x240", "QVGA", "CIF", "HVGA", "VGA",
+        "SVGA", "XGA", "HD", "SXGA", "UXGA", "FHD", "P_HD", "P_3MP", "QXGA", 
+        "QHD", "WQXGA", "P_FHD", "QSXGA"
+    };
+    
+    if (config_.frame_size < sizeof(frame_size_names) / sizeof(frame_size_names[0])) {
+        ESP_LOGI(TAG, "Frame size: %s", frame_size_names[config_.frame_size]);
+    }
+    
+    ESP_LOGI(TAG, "JPEG quality: %d", config_.jpeg_quality);
+    ESP_LOGI(TAG, "Frame buffers: %d", config_.fb_count);
+    ESP_LOGI(TAG, "XCLK frequency: %lu Hz", config_.xclk_freq_hz);
+    ESP_LOGI(TAG, "Target FPS: %d", CameraConfig::TARGET_FPS);
+    ESP_LOGI(TAG, "Pixel format: %s", config_.pixel_format == PIXFORMAT_JPEG ? "JPEG" : "RAW");
+    ESP_LOGI(TAG, "===========================");
+}
+
+void OV2640Camera::printSystemStatus() const {
+    ESP_LOGI(TAG, "=== System Status ===");
+    ESP_LOGI(TAG, "Camera initialized: %s", initialized_.load() ? "Yes" : "No");
+    ESP_LOGI(TAG, "Streaming: %s", streaming_.load() ? "Yes" : "No");
+    ESP_LOGI(TAG, "Free heap: %lu bytes", ESP.getFreeHeap());
+    ESP_LOGI(TAG, "Free PSRAM: %lu bytes", ESP.getFreePsram());
+    ESP_LOGI(TAG, "CPU frequency: %lu MHz", ESP.getCpuFreqMHz());
+    ESP_LOGI(TAG, "Last error: %s", errorToString(last_error_));
+    if (!last_error_message_.empty()) {
+        ESP_LOGI(TAG, "Error message: %s", last_error_message_.c_str());
+    }
+    ESP_LOGI(TAG, "====================");
+}
+
+// Utility and helper methods
+const char* OV2640Camera::errorToString(CameraError error) {
+    switch (error) {
+        case CameraError::NONE: return "No error";
+        case CameraError::INIT_FAILED: return "Initialization failed";
+        case CameraError::SENSOR_NOT_FOUND: return "Sensor not found";
+        case CameraError::CAPTURE_FAILED: return "Capture failed";
+        case CameraError::MEMORY_ALLOCATION_FAILED: return "Memory allocation failed";
+        case CameraError::INVALID_CONFIG: return "Invalid configuration";
+        case CameraError::HARDWARE_ERROR: return "Hardware error";
+        default: return "Unknown error";
+    }
+}
+
+bool OV2640Camera::isValidFrameSize(framesize_t size) {
+    return size >= FRAMESIZE_96X96 && size <= FRAMESIZE_QSXGA;
+}
+
+// Private helper methods
+void OV2640Camera::updateStats(camera_fb_t* fb, unsigned long capture_time) {
+    if (!fb || xSemaphoreTake(stats_mutex_, pdMS_TO_TICKS(10)) != pdTRUE) {
+        return;
+    }
+    
+    stats_.total_frames++;
+    frame_size_accumulator_ += fb->len;
+    stats_.avg_frame_size = frame_size_accumulator_ / stats_.total_frames;
+    
+    // Update min heap tracking
+    uint32_t current_heap = ESP.getFreeHeap();
+    if (current_heap < stats_.min_heap) {
+        stats_.min_heap = current_heap;
+    }
+    
+    // Update max frame time
+    if (capture_time > stats_.max_frame_time) {
+        stats_.max_frame_time = capture_time;
+    }
+    
+    // Calculate FPS (update every 10 frames for smoother reading)
+    if (stats_.total_frames % 10 == 0) {
+        unsigned long current_time = millis();
+        if (current_time > last_frame_time_ && stats_.total_frames > 0) {
+            float elapsed_seconds = (current_time - stats_.last_reset_time) / 1000.0f;
+            stats_.current_fps = stats_.total_frames / elapsed_seconds;
+        }
+    }
+    
+    xSemaphoreGive(stats_mutex_);
+}
+
+bool OV2640Camera::checkMemoryConstraints() const {
+    uint32_t free_heap = ESP.getFreeHeap();
+    uint32_t free_psram = ESP.getFreePsram();
+    
+    if (free_heap < CameraConfig::MIN_FREE_HEAP) {
+        ESP_LOGE(TAG, "Insufficient heap memory: %lu bytes (minimum: %lu)", 
+                 free_heap, CameraConfig::MIN_FREE_HEAP);
+        return false;
+    }
+    
+    if (free_psram < 1000000) { // Minimum 1MB PSRAM
+        ESP_LOGE(TAG, "Insufficient PSRAM: %lu bytes", free_psram);
+        return false;
+    }
+    
+    return true;
+}
+
+void OV2640Camera::logPerformanceWarning(const char* message) const {
+    ESP_LOGW(TAG, "Performance Warning: %s", message);
+}
