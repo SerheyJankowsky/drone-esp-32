@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>🚁 FPV Drone Camera - Стриминг</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+        color: white;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .header {
+        background: rgba(0, 0, 0, 0.3);
+        padding: 15px 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        backdrop-filter: blur(10px);
+      }
+
+      .logo {
+        font-size: 24px;
+        font-weight: bold;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .status {
+        display: flex;
+        gap: 20px;
+        font-size: 14px;
+      }
+
+      .status-item {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #ff4444;
+        animation: pulse 2s infinite;
+      }
+
+      .status-dot.connected {
+        background: #44ff44;
+      }
+
+      @keyframes pulse {
+        0% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+        100% {
+          opacity: 1;
+        }
+      }
+
+      .main-content {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+      }
+
+      .video-container {
+        position: relative;
+        background: #000;
+        border-radius: 15px;
+        overflow: hidden;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+        margin-bottom: 20px;
+        max-width: 90vw;
+        max-height: 70vh;
+      }
+
+      #videoStream {
+        display: block;
+        max-width: 100%;
+        max-height: 100%;
+        width: auto;
+        height: auto;
+      }
+
+      .video-placeholder {
+        width: 640px;
+        height: 480px;
+        max-width: 90vw;
+        max-height: 70vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(45deg, #333, #555);
+        color: #ccc;
+        font-size: 18px;
+        text-align: center;
+        padding: 40px;
+      }
+
+      .drone-icon {
+        font-size: 64px;
+        margin-bottom: 20px;
+        opacity: 0.7;
+        animation: float 3s ease-in-out infinite;
+      }
+
+      @keyframes float {
+        0%,
+        100% {
+          transform: translateY(0px);
+        }
+        50% {
+          transform: translateY(-10px);
+        }
+      }
+
+      .controls {
+        display: flex;
+        gap: 15px;
+        flex-wrap: wrap;
+        justify-content: center;
+        margin-bottom: 20px;
+      }
+
+      .btn {
+        padding: 12px 24px;
+        border: none;
+        border-radius: 25px;
+        background: rgba(255, 255, 255, 0.2);
+        color: white;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+        transition: all 0.3s ease;
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+
+      .btn:hover {
+        background: rgba(255, 255, 255, 0.3);
+        transform: translateY(-2px);
+      }
+
+      .btn:active {
+        transform: translateY(0);
+      }
+
+      .btn.primary {
+        background: linear-gradient(45deg, #4caf50, #45a049);
+      }
+
+      .btn.danger {
+        background: linear-gradient(45deg, #f44336, #d32f2f);
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 15px;
+        width: 100%;
+        max-width: 800px;
+      }
+
+      .stat-card {
+        background: rgba(255, 255, 255, 0.1);
+        padding: 15px;
+        border-radius: 10px;
+        text-align: center;
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+
+      .stat-value {
+        font-size: 24px;
+        font-weight: bold;
+        margin-bottom: 5px;
+      }
+
+      .stat-label {
+        font-size: 12px;
+        opacity: 0.8;
+        text-transform: uppercase;
+      }
+
+      .log {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        width: 300px;
+        max-height: 200px;
+        background: rgba(0, 0, 0, 0.8);
+        color: #00ff00;
+        font-family: "Courier New", monospace;
+        font-size: 12px;
+        padding: 10px;
+        border-radius: 5px;
+        overflow-y: auto;
+        backdrop-filter: blur(10px);
+        opacity: 0.9;
+      }
+
+      .log-entry {
+        margin-bottom: 2px;
+      }
+
+      .timestamp {
+        color: #888;
+      }
+
+      @media (max-width: 768px) {
+        .header {
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .status {
+          gap: 15px;
+        }
+
+        .controls {
+          gap: 10px;
+        }
+
+        .btn {
+          padding: 10px 20px;
+          font-size: 12px;
+        }
+
+        .log {
+          width: calc(100vw - 40px);
+          right: 20px;
+          left: 20px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <div class="logo">🚁 FPV Drone Camera</div>
+      <div class="status">
+        <div class="status-item">
+          <div class="status-dot" id="connectionStatus"></div>
+          <span id="connectionText">Подключение...</span>
+        </div>
+        <div class="status-item">🎥 <span id="fpsCounter">0 FPS</span></div>
+        <div class="status-item">
+          📡 <span id="bitrateCounter">0 KB/s</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="main-content">
+      <div class="video-container">
+        <img id="videoStream" style="display: none" alt="Видео поток" />
+        <div class="video-placeholder" id="placeholder">
+          <div class="drone-icon">🚁</div>
+          <div>Подключение к дрону...</div>
+          <div style="font-size: 14px; margin-top: 10px; opacity: 0.7">
+            WebSocket: ws://192.168.4.1:8080
+          </div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button class="btn primary" onclick="connectToStream()">
+          🔗 Подключиться
+        </button>
+        <button class="btn danger" onclick="disconnectFromStream()">
+          ⛔ Отключиться
+        </button>
+        <button class="btn" onclick="toggleFullscreen()">
+          🔍 Полный экран
+        </button>
+        <button class="btn" onclick="takeScreenshot()">📸 Скриншот</button>
+        <button class="btn" onclick="toggleLog()">📋 Лог</button>
+      </div>
+
+      <div class="stats">
+        <div class="stat-card">
+          <div class="stat-value" id="frameCount">0</div>
+          <div class="stat-label">Кадров получено</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="dataReceived">0 MB</div>
+          <div class="stat-label">Данных получено</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="connectionTime">00:00</div>
+          <div class="stat-label">Время соединения</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="quality">Отлично</div>
+          <div class="stat-label">Качество</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="log" id="logPanel" style="display: none">
+      <div id="logContent"></div>
+    </div>
+
+    <script>
+      let ws = null;
+      let frameCount = 0;
+      let totalDataReceived = 0;
+      let connectionStartTime = null;
+      let lastFrameTime = 0;
+      let fpsArray = [];
+      let logVisible = false;
+
+      const videoStream = document.getElementById("videoStream");
+      const placeholder = document.getElementById("placeholder");
+      const connectionStatus = document.getElementById("connectionStatus");
+      const connectionText = document.getElementById("connectionText");
+      const fpsCounter = document.getElementById("fpsCounter");
+      const bitrateCounter = document.getElementById("bitrateCounter");
+      const logPanel = document.getElementById("logPanel");
+      const logContent = document.getElementById("logContent");
+
+      function log(message) {
+        const timestamp = new Date().toLocaleTimeString();
+        const entry = document.createElement("div");
+        entry.className = "log-entry";
+        entry.innerHTML = `<span class="timestamp">[${timestamp}]</span> ${message}`;
+        logContent.appendChild(entry);
+        logContent.scrollTop = logContent.scrollHeight;
+
+        // Ограничиваем количество записей в логе
+        if (logContent.children.length > 50) {
+          logContent.removeChild(logContent.firstChild);
+        }
+      }
+
+      function connectToStream() {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          log("⚠️ Уже подключен к стриму");
+          return;
+        }
+
+        log("🔗 Подключение к WebSocket...");
+
+        ws = new WebSocket("ws://192.168.4.1:8080");
+
+        ws.onopen = function () {
+          log("✅ WebSocket подключен успешно");
+          connectionStatus.classList.add("connected");
+          connectionText.textContent = "Подключен";
+          connectionStartTime = Date.now();
+
+          placeholder.innerHTML =
+            '<div class="drone-icon">🎥</div><div>Ожидание видео...</div>';
+        };
+
+        ws.onmessage = function (event) {
+          if (event.data instanceof Blob) {
+            frameCount++;
+            totalDataReceived += event.data.size;
+
+            const now = Date.now();
+            fpsArray.push(now);
+            fpsArray = fpsArray.filter((time) => now - time < 1000);
+
+            const url = URL.createObjectURL(event.data);
+            videoStream.onload = function () {
+              URL.revokeObjectURL(url);
+              if (placeholder.style.display !== "none") {
+                placeholder.style.display = "none";
+                videoStream.style.display = "block";
+              }
+            };
+            videoStream.src = url;
+
+            updateStats();
+          }
+        };
+
+        ws.onerror = function (error) {
+          log("❌ Ошибка WebSocket: " + error);
+          connectionStatus.classList.remove("connected");
+          connectionText.textContent = "Ошибка";
+        };
+
+        ws.onclose = function () {
+          log("🔌 WebSocket отключен");
+          connectionStatus.classList.remove("connected");
+          connectionText.textContent = "Отключен";
+          videoStream.style.display = "none";
+          placeholder.style.display = "flex";
+          placeholder.innerHTML =
+            '<div class="drone-icon">🚁</div><div>Соединение потеряно</div><div style="font-size: 14px; margin-top: 10px;">Нажмите "Подключиться" для повтора</div>';
+        };
+      }
+
+      function disconnectFromStream() {
+        if (ws) {
+          log("⛔ Отключение от стрима...");
+          ws.close();
+          ws = null;
+        }
+      }
+
+      function updateStats() {
+        // FPS
+        fpsCounter.textContent = fpsArray.length + " FPS";
+
+        // Bitrate
+        const bitrate = (
+          totalDataReceived /
+          ((Date.now() - connectionStartTime) / 1000) /
+          1024
+        ).toFixed(1);
+        bitrateCounter.textContent = bitrate + " KB/s";
+
+        // Frame count
+        document.getElementById("frameCount").textContent = frameCount;
+
+        // Data received
+        document.getElementById("dataReceived").textContent =
+          (totalDataReceived / 1024 / 1024).toFixed(2) + " MB";
+
+        // Connection time
+        if (connectionStartTime) {
+          const elapsed = Math.floor((Date.now() - connectionStartTime) / 1000);
+          const minutes = Math.floor(elapsed / 60);
+          const seconds = elapsed % 60;
+          document.getElementById("connectionTime").textContent =
+            String(minutes).padStart(2, "0") +
+            ":" +
+            String(seconds).padStart(2, "0");
+        }
+
+        // Quality assessment
+        const fps = fpsArray.length;
+        let quality = "Отлично";
+        if (fps < 15) quality = "Плохо";
+        else if (fps < 25) quality = "Средне";
+        else if (fps < 30) quality = "Хорошо";
+        document.getElementById("quality").textContent = quality;
+      }
+
+      function toggleFullscreen() {
+        if (!document.fullscreenElement) {
+          videoStream.requestFullscreen();
+        } else {
+          document.exitFullscreen();
+        }
+      }
+
+      function takeScreenshot() {
+        if (videoStream.src) {
+          const canvas = document.createElement("canvas");
+          canvas.width = videoStream.naturalWidth;
+          canvas.height = videoStream.naturalHeight;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(videoStream, 0, 0);
+
+          const link = document.createElement("a");
+          link.download = "drone_screenshot_" + Date.now() + ".png";
+          link.href = canvas.toDataURL();
+          link.click();
+
+          log("📸 Скриншот сохранен");
+        }
+      }
+
+      function toggleLog() {
+        logVisible = !logVisible;
+        logPanel.style.display = logVisible ? "block" : "none";
+      }
+
+      // Автоматическое подключение при загрузке страницы
+      window.onload = function () {
+        log("🚀 Интерфейс загружен");
+        setTimeout(connectToStream, 1000);
+      };
+
+      // Переподключение при потере соединения
+      setInterval(function () {
+        if (!ws || ws.readyState === WebSocket.CLOSED) {
+          if (connectionStartTime) {
+            log("🔄 Попытка переподключения...");
+            connectToStream();
+          }
+        }
+      }, 5000);
+
+      // Обновление статистики каждую секунду
+      setInterval(updateStats, 1000);
+    </script>
+  </body>
+</html>

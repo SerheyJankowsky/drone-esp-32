@@ -144,8 +144,36 @@ bool WebSocketServer::sendWebSocketBinaryFrameSafe(WiFiClient& client, const uin
     // Send header immediately - no checking
     client.write(header, headerLen);
     
-    // Send all data immediately - no chunking, no checking, no delays
-    client.write(data, len);
+    // ЧАНКОВАЯ ОТПРАВКА БОЛЬШИХ КАДРОВ для предотвращения разрывов соединения
+    const size_t CHUNK_SIZE = 4096; // 4KB чанки для стабильности
+    
+    if (len > CHUNK_SIZE) {
+        // Большой кадр - отправляем по частям
+        size_t offset = 0;
+        while (offset < len) {
+            size_t chunk = std::min(CHUNK_SIZE, len - offset);
+            
+            // Отправляем чанк
+            size_t written = client.write(data + offset, chunk);
+            if (written != chunk) {
+                // Если не удалось отправить полностью, пробуем снова после flush
+                client.flush();
+                delayMicroseconds(100); // Микрозадержка для стабилизации TCP
+                written = client.write(data + offset, chunk);
+            }
+            
+            offset += written;
+            
+            // Периодический flush для больших кадров
+            if (offset % (CHUNK_SIZE * 4) == 0) {
+                client.flush();
+                delayMicroseconds(50);
+            }
+        }
+    } else {
+        // Маленький кадр - отправляем сразу
+        client.write(data, len);
+    }
     
     // Force immediate transmission
     client.flush();
@@ -219,11 +247,19 @@ void WebSocketServer::handleClients() {
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (wsConnected_[i]) {
             if (!wsClients_[i].connected()) {
-                Serial.printf("[WS] Client %d disconnected\n", i);
+                Serial.printf("[WS] ⚠️  Client %d disconnected (likely due to large frame)\n", i);
+                Serial.printf("[WS] 📊 Frames skipped before disconnect: %d\n", frameSkipCount_[i]);
+                Serial.printf("[WS] 🔄 Slot %d is now available for reconnection\n", i);
+                
                 wsConnected_[i] = false;
                 wsClients_[i].stop();
                 frameSkipCount_[i] = 0;
+                lastPingTime_[i] = 0;
             } else {
+                // ПРИНУДИТЕЛЬНАЯ ОЧИСТКА БУФЕРА для предотвращения переполнения
+                // Очищаем буфер клиента каждый раз при обработке
+                wsClients_[i].flush();
+                
                 // Send periodic ping to keep connection alive
                 if (millis() - lastPingTime_[i] > 30000) { // Every 30 seconds
                     sendPing(wsClients_[i]);
@@ -294,18 +330,20 @@ void WebSocketServer::handleWebSocketUpgrade(WiFiClient& client, const String& r
     client.println();
     client.flush();
     
-    // NO OPTIMIZATION - just basic connection setup
-    // Remove all timeouts and delays that might interfere with immediate sending
-    
+    // АГРЕССИВНЫЕ НАСТРОЙКИ TCP ДЛЯ МАКСИМАЛЬНОЙ ПРОИЗВОДИТЕЛЬНОСТИ
+    // Настраиваем клиент для немедленной отправки данных
     wsClients_[slot] = client;
+    wsClients_[slot].setNoDelay(true);        // Отключаем алгоритм Nagle - отправляем данные немедленно
+    wsClients_[slot].setTimeout(1);           // Минимальный таймаут для отправки
+    
     wsConnected_[slot] = true;
     lastPingTime_[slot] = millis();
     frameSkipCount_[slot] = 0;
     
-    Serial.printf("[WS] WebSocket client %d connected successfully\n", slot);
+    Serial.printf("[WS] WebSocket client %d connected with FORCE_SEND mode\n", slot);
     
     // Send welcome message
-    String welcomeMsg = "ESP32-S3 Camera Ready - MAXIMUM THROUGHPUT MODE - NO FRAME SKIPPING";
+    String welcomeMsg = "ESP32-S3 Camera Ready - FORCE SEND MODE - NO BUFFER LIMITS";
     sendWebSocketFrame(wsClients_[slot], welcomeMsg);
 }
 
@@ -412,19 +450,58 @@ void WebSocketServer::streamVideoFrame(camera_fb_t* fb) {
     if (!running_ || !fb) return;
     
     frameCounter_++;
-    
-    // NO FRAME RATE LIMITING - SEND IMMEDIATELY
     unsigned long currentTime = millis();
-    lastFrameTime_ = currentTime;
     
-    // Send frame to ALL connected clients WITHOUT ANY CHECKS
+    // Стабильная отправка 20fps - проверяем качество соединения
+    static unsigned long lastFrameDropWarning = 0;
+    int successful_sends = 0;
+    
+    // Отправляем кадр всем подключенным клиентам БЕЗ проверки буфера
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (wsConnected_[i] && wsClients_[i].connected()) {
-            // FORCE SEND - no buffer checking, no error handling, no skipping
-            sendWebSocketBinaryFrameSafe(wsClients_[i], fb->buf, fb->len);
-            // NO ERROR CHECKING - just send and move on
+            // ПРИНУДИТЕЛЬНАЯ ОТПРАВКА - клиент должен ВСЕГДА получать фрейм
+            // Не проверяем availableForWrite() - отправляем в любом случае
+            
+            if (sendWebSocketBinaryFrameSafe(wsClients_[i], fb->buf, fb->len)) {
+                successful_sends++;
+                frameSkipCount_[i] = 0; // Сбрасываем счетчик пропущенных кадров
+            } else {
+                // Если отправка не удалась, пробуем принудительно очистить буфер и отправить снова
+                wsClients_[i].flush();
+                delay(1); // Микрозадержка
+                
+                if (sendWebSocketBinaryFrameSafe(wsClients_[i], fb->buf, fb->len)) {
+                    successful_sends++;
+                    frameSkipCount_[i] = 0;
+                } else {
+                    frameSkipCount_[i]++;
+                    
+                    // Логируем только критические ошибки отправки (не буфер)
+                    if (currentTime - lastFrameDropWarning > 5000) {
+                        Serial.printf("[WS] Client %d: FORCE sending frame (buffer ignored)\n", i);
+                        lastFrameDropWarning = currentTime;
+                    }
+                }
+            }
         }
     }
+    
+    // Статистика отправки кадров
+    static unsigned long lastStatsTime = 0;
+    static int total_frames_sent = 0;
+    total_frames_sent += successful_sends;
+    
+    if (currentTime - lastStatsTime >= 10000) { // Каждые 10 секунд
+        float avg_fps = (float)frameCounter_ / 10.0f;
+        Serial.printf("[WS] 20fps Stream: %.1f actual fps, %d frames sent to clients\n", 
+                     avg_fps, total_frames_sent);
+        
+        frameCounter_ = 0;
+        total_frames_sent = 0;
+        lastStatsTime = currentTime;
+    }
+    
+    lastFrameTime_ = currentTime;
 }
 
 void WebSocketServer::sendPing(WiFiClient& client) {

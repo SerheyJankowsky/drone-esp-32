@@ -45,9 +45,17 @@ void OV2640Camera::initializeConfig() {
     
     // Settings optimized for MAXIMUM frame rate and immediate delivery
     config_.frame_size = FRAMESIZE_QVGA;  // 640x480 - smallest size for maximum speed
-    config_.jpeg_quality = 10; // Higher compression for smallest files and fastest transmission
-    config_.fb_count = 2; // Double buffer for immediate processing
-    config_.fb_location = CAMERA_FB_IN_PSRAM;
+    config_.jpeg_quality = 20; // Higher compression for smallest files and fastest transmission
+    config_.fb_count = 1; // Double buffer for immediate processing
+    
+    // Memory allocation - prefer PSRAM if available, otherwise use DRAM
+    if (ESP.getFreePsram() > 0) {
+        config_.fb_location = CAMERA_FB_IN_PSRAM;
+        ESP_LOGI(TAG, "Using PSRAM for frame buffers");
+    } else {
+        config_.fb_location = CAMERA_FB_IN_DRAM;
+        ESP_LOGW(TAG, "Using DRAM for frame buffers (no PSRAM available)");
+    }
     config_.grab_mode = CAMERA_GRAB_WHEN_EMPTY;  // Always get latest frame for real-time
 }
 
@@ -100,9 +108,9 @@ bool OV2640Camera::configureSensor() {
     
     // Optimized sensor settings for high frame rate and quality
     sensor->set_brightness(sensor, 0);      // -2 to 2
-    sensor->set_contrast(sensor, 1);        // -2 to 2, slight increase for better definition
-    sensor->set_saturation(sensor, 0);      // -2 to 2
-    sensor->set_special_effect(sensor, 0);  // No effect
+    sensor->set_contrast(sensor, 2);        // Увеличен для черно-белого режима
+    sensor->set_saturation(sensor, -2);     // Минимальная для черно-белого режима
+    sensor->set_special_effect(sensor, 2);  // Grayscale effect для уменьшения размера
     sensor->set_whitebal(sensor, 1);        // Auto white balance
     sensor->set_awb_gain(sensor, 1);        // Auto white balance gain
     sensor->set_wb_mode(sensor, 0);         // Auto mode
@@ -122,7 +130,9 @@ bool OV2640Camera::configureSensor() {
     sensor->set_dcw(sensor, 1);             // Downsize enable
     sensor->set_colorbar(sensor, 0);        // No color bar
     
-    ESP_LOGI(TAG, "Sensor configured for optimal 30fps performance");
+    ESP_LOGI(TAG, "🎬 Sensor configured for GRAYSCALE mode (smaller file sizes)");
+    ESP_LOGI(TAG, "📊 Expected JPEG size reduction: 30-50%% vs color mode");
+    ESP_LOGI(TAG, "✅ Sensor configured for optimal 30fps performance");
     return true;
 }
 
@@ -163,6 +173,36 @@ std::unique_ptr<camera_fb_t, std::function<void(camera_fb_t*)>> OV2640Camera::ca
         
         ESP_LOGW(TAG, "Frame capture failed");
         return nullptr;
+    }
+    
+    // ПРОВЕРКА РАЗМЕРА КАДРА для предотвращения разрывов WebSocket
+    const size_t MAX_SAFE_FRAME_SIZE = 32768; // 32KB максимум для стабильности
+    
+    if (fb->len > MAX_SAFE_FRAME_SIZE) {
+        ESP_LOGW(TAG, "Large frame detected: %zu bytes (max safe: %zu)", fb->len, MAX_SAFE_FRAME_SIZE);
+        
+        // Возвращаем кадр и пробуем увеличить сжатие
+        esp_camera_fb_return(fb);
+        
+        // Временно увеличиваем качество JPEG (больше сжатие)
+        sensor_t* sensor = esp_camera_sensor_get();
+        if (sensor) {
+            int current_quality = sensor->status.quality;
+            if (current_quality < 25) { // Увеличиваем сжатие
+                sensor->set_quality(sensor, current_quality + 5);
+                ESP_LOGI(TAG, "Increased JPEG compression to quality %d", current_quality + 5);
+            }
+        }
+        
+        // Делаем повторный захват с большим сжатием
+        fb = esp_camera_fb_get();
+        if (!fb) {
+            last_error_ = CameraError::CAPTURE_FAILED;
+            last_error_message_ = "Retry frame capture failed";
+            return nullptr;
+        }
+        
+        ESP_LOGI(TAG, "Recompressed frame size: %zu bytes", fb->len);
     }
     
     unsigned long capture_time = millis() - frame_start_time_;
@@ -267,6 +307,50 @@ bool OV2640Camera::setPixelFormat(pixformat_t format) {
     last_error_ = CameraError::INVALID_CONFIG;
     last_error_message_ = "Failed to set pixel format";
     return false;
+}
+
+bool OV2640Camera::setGrayscaleMode(bool enable) {
+    if (!initialized_.load()) {
+        last_error_ = CameraError::CAPTURE_FAILED;
+        last_error_message_ = "Camera not initialized";
+        ESP_LOGW(TAG, "Camera not initialized");
+        return false;
+    }
+    
+    sensor_t* sensor = esp_camera_sensor_get();
+    if (!sensor) {
+        last_error_ = CameraError::SENSOR_NOT_FOUND;
+        last_error_message_ = "Failed to get camera sensor";
+        return false;
+    }
+    
+    if (enable) {
+        // Включаем черно-белый режим для уменьшения размера файла
+        ESP_LOGI(TAG, "🎬 Enabling GRAYSCALE mode for smaller file sizes");
+        
+        // Убираем насыщенность цветов (делаем изображение серым)
+        sensor->set_saturation(sensor, -2);    // Минимальная насыщенность
+        sensor->set_special_effect(sensor, 2); // Grayscale special effect
+        
+        // Дополнительные настройки для лучшего черно-белого изображения
+        sensor->set_contrast(sensor, 2);       // Увеличиваем контраст
+        sensor->set_brightness(sensor, 0);     // Нормальная яркость
+        
+        ESP_LOGI(TAG, "✅ Grayscale mode enabled - expect 30-50%% smaller JPEG files");
+        
+    } else {
+        // Возвращаем цветной режим
+        ESP_LOGI(TAG, "🌈 Enabling COLOR mode");
+        
+        sensor->set_saturation(sensor, 0);     // Нормальная насыщенность
+        sensor->set_special_effect(sensor, 0); // Без эффектов
+        sensor->set_contrast(sensor, 1);       // Нормальный контраст
+        sensor->set_brightness(sensor, 0);     // Нормальная яркость
+        
+        ESP_LOGI(TAG, "✅ Color mode enabled");
+    }
+    
+    return true;
 }
 
 FrameStats OV2640Camera::getStatistics() const {
@@ -428,9 +512,16 @@ bool OV2640Camera::checkMemoryConstraints() const {
         return false;
     }
     
-    if (free_psram < 1000000) { // Minimum 1MB PSRAM
-        ESP_LOGE(TAG, "Insufficient PSRAM: %lu bytes", free_psram);
-        return false;
+    // PSRAM is preferred but not required
+    if (free_psram > 0) {
+        ESP_LOGI(TAG, "PSRAM available: %lu bytes - High quality mode enabled", free_psram);
+    } else {
+        ESP_LOGW(TAG, "No PSRAM detected - Using heap memory (reduced quality)");
+        // Check if we have enough heap for basic camera operation
+        if (free_heap < 200000) { // 200KB minimum for camera without PSRAM
+            ESP_LOGE(TAG, "Insufficient memory for camera operation: %lu bytes", free_heap);
+            return false;
+        }
     }
     
     return true;

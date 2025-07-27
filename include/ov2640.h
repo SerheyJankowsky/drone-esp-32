@@ -117,6 +117,7 @@ public:
     bool setFrameSize(framesize_t size);
     bool setJpegQuality(uint8_t quality);
     bool setPixelFormat(pixformat_t format);
+    bool setGrayscaleMode(bool enable);  // НОВЫЙ МЕТОД: черно-белый режим
     
     // Status and diagnostics
     bool isInitialized() const noexcept { return initialized_.load(); }
