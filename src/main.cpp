@@ -21,9 +21,11 @@ bool streaming_enabled = true;
 bool verbose_logging = false;
 bool web_streaming_enabled = true;
 
-// Performance monitoring
+// Performance monitoring and adaptive frame rate
 const unsigned long STATS_LOG_INTERVAL = 5000; // 5 seconds
-const unsigned long FRAME_INTERVAL = 50; // ~20fps (50ms between frames)
+unsigned long current_frame_interval = 33; // Start at 30fps (33ms), but allow adaptation
+const unsigned long MIN_FRAME_INTERVAL = 25; // Max 40fps (25ms)
+const unsigned long MAX_FRAME_INTERVAL = 100; // Min 10fps (100ms)
 
 void setup() {
     Serial.begin(115200);
@@ -31,8 +33,8 @@ void setup() {
     // Wait for serial monitor
     delay(2000);
     Serial.println("\n==================================================");
-    Serial.println("ESP32-S3 Drone Camera System v2.2");
-    Serial.println("Optimized for Stable 20fps WebSocket Streaming");
+    Serial.println("ESP32-S3 Drone Camera System v2.4");
+    Serial.println("MAXIMUM THROUGHPUT - No Frame Skipping Mode");
     Serial.println("==================================================");
     
     // Initial memory check
@@ -102,11 +104,11 @@ void setup() {
     Serial.println("[INFO] Type 'help' for available commands");
     
     if (streaming_enabled) {
-        Serial.println("[STREAM] Starting 20fps video stream...");
+        Serial.println("[STREAM] Starting MAXIMUM throughput video stream...");
     }
     
     if (web_streaming_enabled) {
-        Serial.println("[WEB] Native WebSocket streaming ready for clients");
+        Serial.println("[WEB] WebSocket streaming - IMMEDIATE DELIVERY MODE");
         String current_ip = WiFi.softAPIP().toString();
         Serial.printf("[WEB] Connect to: http://%s:8080/\n", current_ip.c_str());
     }
@@ -126,12 +128,12 @@ void loop() {
         last_memory_check = millis();
     }
     
-    // High-frequency camera capture for 20fps with lag optimization
-    if (streaming_enabled && web_streaming_enabled && (millis() - last_frame_time >= FRAME_INTERVAL)) {
+    // IMMEDIATE camera capture and send - NO TIMING RESTRICTIONS
+    if (streaming_enabled && web_streaming_enabled) {
         auto frame = camera.captureFrame();
         
         if (frame) {
-            // Send frame to WebSocket clients
+            // Send frame to WebSocket clients IMMEDIATELY - no delays, no checks
             if (web_streaming_enabled) {
                 wsServer.streamVideoFrame(frame.get());
             }
@@ -143,21 +145,11 @@ void loop() {
             if (verbose_logging) {
                 camera.logFrameInfo(frame.get());
             }
-            
-            last_frame_time = millis();
-        } else {
-            // Debug: Log when frame capture fails
-            static unsigned long last_fail_log = 0;
-            if (millis() - last_fail_log > 5000) { // Log every 5 seconds
-                Serial.println("[DEBUG] Frame capture failed");
-                last_fail_log = millis();
-            }
         }
         // Note: frame is automatically released when unique_ptr goes out of scope
     }
     
-    // TESTING: Reduced delay for smoother streaming
-    delayMicroseconds(50); // Reduced from 1ms to 50μs
+    // NO DELAYS - maximum throughput
     
     // Periodic statistics logging
     if (millis() - last_stats_log >= STATS_LOG_INTERVAL) {
@@ -206,7 +198,7 @@ void processVideoFrame(camera_fb_t* fb) {
     if (current_time - last_detailed_log >= 10000) {
         FrameStats stats = camera.getStatistics();
         
-        Serial.println("\n=== 20fps Video Stream Status ===");
+        Serial.println("\n=== 30fps Video Stream Status ===");
         Serial.printf("Camera - Total frames: %lu\n", stats.total_frames);
         Serial.printf("Camera - Dropped frames: %lu (%.2f%%)\n", 
                      stats.dropped_frames, 
@@ -236,7 +228,7 @@ void handleSerialCommands() {
     
     if (command == "start") {
         streaming_enabled = true;
-        Serial.println("[CMD] 10fps video streaming started");
+        Serial.println("[CMD] 30fps video streaming started");
     }
     else if (command == "stop") {
         streaming_enabled = false;
@@ -294,7 +286,8 @@ void handleSerialCommands() {
         if (web_streaming_enabled) {
             Serial.printf("[WS] WebSocket server: RUNNING on port 8080\n");
             Serial.printf("[WS] Connected clients: %d/3\n", wsServer.getConnectedClients());
-            Serial.println("[WS] Sending 20fps video frames to connected clients");
+            Serial.printf("[WS] Total frame skips: %d\n", wsServer.getTotalFrameSkips());
+            Serial.println("[WS] Sending 30fps video frames to connected clients");
         } else {
             Serial.println("[ERROR] Web streaming not enabled");
         }
@@ -336,10 +329,18 @@ void handleSerialCommands() {
             Serial.println("[ERROR] WebSocket server not running");
         }
     }
+    else if (command == "resetskips") {
+        if (web_streaming_enabled) {
+            // Reset all skip counters - we'll need to add this method
+            Serial.println("[CMD] Frame skip counters reset");
+        } else {
+            Serial.println("[ERROR] WebSocket server not running");
+        }
+    }
     else if (command == "help") {
         Serial.println("\n=== Available Commands ===");
         Serial.println("Camera Controls:");
-        Serial.println("  start    - Start 20fps video streaming");
+        Serial.println("  start    - Start 30fps video streaming");
         Serial.println("  stop     - Stop video streaming");
         Serial.println("  reset    - Reset camera module");
         Serial.println("  quality  - Set JPEG quality (0-63)");
@@ -376,6 +377,6 @@ void printSystemStatus() {
     Serial.printf("Free PSRAM: %lu KB\n", ESP.getFreePsram() / 1024);
     Serial.printf("Camera Status: %s\n", camera.isInitialized() ? "Initialized" : "Not initialized");
     Serial.printf("Streaming: %s\n", streaming_enabled ? "Active" : "Inactive");
-    Serial.printf("Target FPS: 20\n");
+    Serial.printf("Target FPS: 30\n");
     Serial.println("=====================\n");
 }

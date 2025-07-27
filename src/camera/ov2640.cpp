@@ -21,7 +21,7 @@ OV2640Camera::~OV2640Camera() {
 }
 
 void OV2640Camera::initializeConfig() {
-    // Initialize camera configuration with optimized settings for 30fps
+    // Initialize camera configuration with optimized settings for maximum frame rate
     config_.ledc_channel = LEDC_CHANNEL_0;
     config_.ledc_timer = LEDC_TIMER_0;
     config_.pin_d0 = CameraPins::Y2;
@@ -40,15 +40,15 @@ void OV2640Camera::initializeConfig() {
     config_.pin_sccb_scl = CameraPins::SIOC;
     config_.pin_pwdn = CameraPins::PWDN;
     config_.pin_reset = CameraPins::RESET;
-    config_.xclk_freq_hz = CameraConfig::XCLK_FREQ_HZ;
+    config_.xclk_freq_hz = 20000000; // Maximum clock frequency for highest frame rate
     config_.pixel_format = PIXFORMAT_JPEG;
     
-    // Optimized settings for 30fps
-    config_.frame_size = FRAMESIZE_VGA;  // 640x480 for better 30fps performance
-    config_.jpeg_quality = CameraConfig::JPEG_QUALITY;
-    config_.fb_count = CameraConfig::FRAME_BUFFER_COUNT;
+    // Settings optimized for MAXIMUM frame rate and immediate delivery
+    config_.frame_size = FRAMESIZE_QVGA;  // 640x480 - smallest size for maximum speed
+    config_.jpeg_quality = 10; // Higher compression for smallest files and fastest transmission
+    config_.fb_count = 2; // Double buffer for immediate processing
     config_.fb_location = CAMERA_FB_IN_PSRAM;
-    config_.grab_mode = CAMERA_GRAB_LATEST;  // Always get latest frame for real-time
+    config_.grab_mode = CAMERA_GRAB_WHEN_EMPTY;  // Always get latest frame for real-time
 }
 
 bool OV2640Camera::initialize() {
@@ -148,11 +148,8 @@ std::unique_ptr<camera_fb_t, std::function<void(camera_fb_t*)>> OV2640Camera::ca
     
     frame_start_time_ = millis();
     
-    // Check if we should skip this frame to maintain target FPS
-    if (frame_start_time_ - last_frame_time_ < CameraConfig::FRAME_INTERVAL_MS) {
-        // Frame rate limiting - skip this capture
-        return nullptr;
-    }
+    // Remove frame rate limiting here - let main loop control timing
+    // This prevents double-limiting that causes frame skipping
     
     camera_fb_t* fb = esp_camera_fb_get();
     if (!fb) {

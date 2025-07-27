@@ -43,6 +43,7 @@ public:
     
     bool isRunning() const;
     int getConnectedClients() const;
+    int getTotalFrameSkips() const; // New method to get total skip count
 };
 
 #endif

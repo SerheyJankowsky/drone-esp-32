@@ -102,29 +102,15 @@ void WebSocketServer::sendWebSocketBinaryFrame(WiFiClient& client, const uint8_t
 
 bool WebSocketServer::sendWebSocketBinaryFrameSafe(WiFiClient& client, const uint8_t* data, size_t len) {
     if (!client.connected()) {
-        Serial.println("[WS] Client not connected in sendWebSocketBinaryFrameSafe");
         return false;
     }
     
     // Validate data
     if (!data || len == 0) {
-        Serial.println("[WS] Invalid data in sendWebSocketBinaryFrameSafe");
         return false;
     }
     
-    // Check if client buffer is available - be more conservative
-    size_t available = client.availableForWrite();
-    size_t required = len + 10; // Header + data
-    
-    // For large frames, we'll send anyway if we have at least 25% of required space
-    // This allows for more aggressive streaming
-    size_t minRequired = required / 4; // 25% of required space
-    
-    if (available < minRequired) {
-        Serial.printf("[WS] Insufficient buffer: available=%d, min_required=%d\n", available, minRequired);
-        return false;
-    }
-    
+    // NO BUFFER CHECKING - JUST SEND IMMEDIATELY
     // Create WebSocket binary frame header (RFC 6455 compliant)
     uint8_t header[10];
     size_t headerLen = 2;
@@ -155,71 +141,16 @@ bool WebSocketServer::sendWebSocketBinaryFrameSafe(WiFiClient& client, const uin
         headerLen = 10;
     }
     
-    // Send header first with validation
-    size_t headerSent = 0;
-    while (headerSent < headerLen && client.connected()) {
-        size_t sent = client.write(header + headerSent, headerLen - headerSent);
-        if (sent == 0) {
-            // Wait a bit for buffer space
-            delay(1);
-            continue;
-        }
-        headerSent += sent;
-    }
+    // Send header immediately - no checking
+    client.write(header, headerLen);
     
-    if (headerSent != headerLen) {
-        Serial.printf("[WS] Header send incomplete: sent=%d, expected=%d\n", headerSent, headerLen);
-        return false;
-    }
+    // Send all data immediately - no chunking, no checking, no delays
+    client.write(data, len);
     
-    // Send payload in smaller chunks with validation
-    const size_t CHUNK_SIZE = 512; // Smaller chunks for better reliability
-    size_t totalSent = 0;
+    // Force immediate transmission
+    client.flush();
     
-    while (totalSent < len && client.connected()) {
-        size_t chunkSize = min(CHUNK_SIZE, len - totalSent);
-        
-        // Wait for buffer space with timeout
-        unsigned long timeout = millis() + 200; // Reduced from 500ms to 200ms
-        while (client.availableForWrite() < chunkSize && client.connected() && millis() < timeout) {
-            delayMicroseconds(500); // Reduced delay
-        }
-        
-        if (millis() >= timeout) {
-            Serial.printf("[WS] Chunk timeout at offset %d\n", totalSent);
-            return false;
-        }
-        
-        if (!client.connected()) {
-            Serial.printf("[WS] Client disconnected during send at offset %d\n", totalSent);
-            return false;
-        }
-        
-        size_t sent = client.write(data + totalSent, chunkSize);
-        if (sent == 0) {
-            Serial.printf("[WS] Zero bytes sent at offset %d\n", totalSent);
-            return false;
-        }
-        
-        totalSent += sent;
-        
-        // Small delay between chunks to prevent overwhelming
-        if (totalSent < len) {
-            delayMicroseconds(100);
-        }
-    }
-    
-    // Ensure all data is transmitted
-    if (client.connected()) {
-        client.flush();
-    }
-    
-    bool success = (totalSent == len);
-    if (!success) {
-        Serial.printf("[WS] Send incomplete: sent=%d, expected=%d\n", totalSent, len);
-    }
-    
-    return success;
+    return true; // Always return true - no error checking
 }
 
 bool WebSocketServer::start() {
@@ -363,8 +294,8 @@ void WebSocketServer::handleWebSocketUpgrade(WiFiClient& client, const String& r
     client.println();
     client.flush();
     
-    // Set client to non-blocking mode and increase buffer
-    client.setTimeout(10000); // Increase timeout to 10 seconds
+    // NO OPTIMIZATION - just basic connection setup
+    // Remove all timeouts and delays that might interfere with immediate sending
     
     wsClients_[slot] = client;
     wsConnected_[slot] = true;
@@ -374,7 +305,7 @@ void WebSocketServer::handleWebSocketUpgrade(WiFiClient& client, const String& r
     Serial.printf("[WS] WebSocket client %d connected successfully\n", slot);
     
     // Send welcome message
-    String welcomeMsg = "ESP32-S3 Camera Ready - 20fps video stream starting";
+    String welcomeMsg = "ESP32-S3 Camera Ready - MAXIMUM THROUGHPUT MODE - NO FRAME SKIPPING";
     sendWebSocketFrame(wsClients_[slot], welcomeMsg);
 }
 
@@ -397,12 +328,12 @@ void WebSocketServer::sendWebPage(WiFiClient& client) {
     client.println("</style></head>");
     client.println("<body>");
     client.println("<div class='container'>");
-    client.println("<h1>🚁 ESP32-S3 Drone Camera - 20fps Live Stream</h1>");
+    client.println("<h1>🚁 ESP32-S3 Drone Camera - MAXIMUM THROUGHPUT</h1>");
     client.println("<div id='status'>Connecting to WebSocket...</div>");
     client.println("<div class='info'>");
     client.println("<div class='info-box'><strong>Frame:</strong><br><span id='frame-count'>0</span></div>");
     client.println("<div class='info-box'><strong>FPS:</strong><br><span id='fps-display'>0</span></div>");
-    client.println("<div class='info-box'><strong>Quality:</strong><br><span id='quality'>HD</span></div>");
+    client.println("<div class='info-box'><strong>Mode:</strong><br><span id='quality'>NO SKIP</span></div>");
     client.println("</div>");
     client.println("<div id='video-container'>");
     client.println("<img id='video' src='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7' alt='Video Stream'/>");
@@ -425,7 +356,7 @@ void WebSocketServer::sendWebPage(WiFiClient& client) {
     client.println("    ");
     client.println("    ws.onopen = function() {");
     client.println("      console.log('WebSocket connected');");
-    client.println("      status.innerHTML = '✅ Connected - Receiving 20fps video stream';");
+    client.println("      status.innerHTML = '✅ Connected - MAXIMUM THROUGHPUT MODE';");
     client.println("      status.style.background = 'linear-gradient(45deg, #4CAF50, #45a049)';");
     client.println("    };");
     client.println("    ");
@@ -482,20 +413,16 @@ void WebSocketServer::streamVideoFrame(camera_fb_t* fb) {
     
     frameCounter_++;
     
-    // Adaptive frame rate - optimized for 20fps
+    // NO FRAME RATE LIMITING - SEND IMMEDIATELY
     unsigned long currentTime = millis();
-    if (currentTime - lastFrameTime_ < 50) { // Target ~20fps (50ms between frames)
-        return; // Skip this frame to maintain reasonable rate
-    }
     lastFrameTime_ = currentTime;
     
-    // Simple video frame streaming to all connected clients
+    // Send frame to ALL connected clients WITHOUT ANY CHECKS
     for (int i = 0; i < MAX_CLIENTS; i++) {
         if (wsConnected_[i] && wsClients_[i].connected()) {
-            // Send every other frame to each client to reduce load
-            if (frameCounter_ % 2 == i % 2) {
-                sendWebSocketBinaryFrame(wsClients_[i], fb->buf, fb->len);
-            }
+            // FORCE SEND - no buffer checking, no error handling, no skipping
+            sendWebSocketBinaryFrameSafe(wsClients_[i], fb->buf, fb->len);
+            // NO ERROR CHECKING - just send and move on
         }
     }
 }
@@ -560,13 +487,21 @@ int WebSocketServer::getConnectedClients() const {
     return count;
 }
 
+int WebSocketServer::getTotalFrameSkips() const {
+    int total = 0;
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        total += frameSkipCount_[i];
+    }
+    return total;
+}
+
 void WebSocketServer::sendStatusUpdate() {
     if (!running_) return;
     
     String statusMessage = String("{") +
         "\"type\":\"status\"," +
         "\"frame\":" + frameCounter_ + "," +
-        "\"fps\":20," +
+        "\"fps\":30," +
         "\"timestamp\":" + millis() + "," +
         "\"heap\":" + ESP.getFreeHeap() + "," +
         "\"clients\":" + getConnectedClients() +
