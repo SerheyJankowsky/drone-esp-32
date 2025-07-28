@@ -1,122 +1,99 @@
-# 🚁 ESP32-S3 FPV Drone Camera System
+# ESP32-S3 Drone Camera - Stable 20fps WebSocket Video Stream
 
-## 🎯 **О проекте**
+## 🎯 **Project Overview**
 
-Профессиональная модульная система для FPV дронов на базе **ESP32-S3 N16R8 CAM** с камерой **OV2640/OV5640**. Система обеспечивает стабильный стриминг видео в реальном времени через **WebSocket** с частотой **до 30 FPS**.
+This is a production-ready ESP32-S3 camera system optimized for stable, reliable video streaming. After extensive development and testing, we've achieved a robust architecture that eliminates connection issues and provides consistent performance.
 
-## ✨ **Ключевые особенности**
+## 🏗️ **Architecture**
 
-- 🎥 **Высокое качество видео**: До 30 FPS в разрешении 640x480
-- 📡 **Мгновенное подключение**: WiFi точка доступа - просто подключитесь
-- 🔄 **Модульная архитектура**: Легко расширяемый и настраиваемый код
-- 💾 **Оптимизированная память**: Использует PSRAM для стабильной работы
-- 🛠️ **Простая диагностика**: Подробные логи и команды через Serial
-- 🌐 **Веб-интерфейс**: Встроенный HTML клиент для просмотра
+- **Single Protocol Design**: WebSocket-only streaming (port 8080)
+- **Stable Frame Rate**: 20fps with conservative flow control
+- **Connection Resilience**: Designed to prevent "Connection reset by peer" errors
+- **Memory Optimized**: Clean, efficient memory usage patterns
+- **Production Ready**: Thoroughly tested for stability
 
-## 🏗️ **Архитектура системы**
+## 📡 **Technical Specifications**
 
-### **Модули системы**
+### **Video Streaming**
 
-- **SystemManager**: Центральный контроллер всех модулей
-- **WiFiModule**: Управление WiFi точкой доступа
-- **OV2640Camera**: Драйвер камеры с оптимизацией производительности
-- **WebSocketServer**: Нативный WebSocket сервер для стриминга
-- **TaskManager**: Управление задачами FreeRTOS на двух ядрах
+- **Protocol**: WebSocket (RFC 6455 compliant)
+- **Frame Rate**: 20fps (50ms intervals)
+- **Resolution**: 640x480 (VGA)
+- **Format**: JPEG compression
+- **Quality**: Configurable (0-63 scale)
+- **Latency**: <200ms end-to-end
 
-### **Технические характеристики**
+### **Network Configuration**
 
-**Видео стриминг:**
+- **WiFi Mode**: Access Point
+- **SSID**: `ESP32-S3_Drone_30fps`
+- **Password**: `drone2024`
+- **IP Address**: `192.168.4.1`
+- **WebSocket Port**: `8080`
+- **Max Clients**: 3 concurrent connections
 
-- Протокол: WebSocket (RFC 6455)
-- Частота кадров: 30 FPS (оптимизировано)
-- Разрешение: 320x240 до 1600x1200
-- Формат: JPEG с настраиваемым качеством
-- Задержка: < 100ms
+### **Hardware Requirements**
 
-**Сетевые настройки:**
+- **MCU**: ESP32-S3 with minimum 8MB PSRAM
+- **Camera**: OV2640 compatible module
+- **Memory**: 16MB Flash recommended
+- **Power**: 5V/2A minimum for stable operation
 
-- Режим WiFi: Точка доступа (AP)
-- Имя сети: `ESP32-S3_Drone_30fps`
-- Пароль: `drone2024`
-- IP адрес: `192.168.4.1`
-- WebSocket порт: `8080`
-- Макс. клиентов: 3 одновременно
+## 🚀 **Quick Start Guide**
 
-**Требования к оборудованию:**
-
-- Плата: ESP32-S3 N16R8 (16MB Flash, 8MB PSRAM)
-- Камера: OV2640 или OV5640
-- Питание: 5V/2A для стабильной работы
-
-## 🚀 **Быстрый старт - 3 простых шага**
-
-### 1. Сборка и загрузка
+### 1. Hardware Setup
 
 ```bash
-# Клонирование проекта
-git clone <repository-url>
-cd drone
+# Flash the firmware
+pio run -t upload
 
-# Сборка и загрузка в ESP32-S3
-pio run --target upload
-
-# Мониторинг работы
-pio run --target monitor
+# Monitor serial output
+pio device monitor
 ```
 
-### 2. Подключение к дрону
+### 2. Network Connection
 
-1. Включите ESP32-S3 CAM
-2. Найдите WiFi сеть: **ESP32-S3_Drone_30fps**
-3. Введите пароль: **drone2024**
-4. IP дрона: **192.168.4.1**
+1. Power on the ESP32-S3
+2. Connect to WiFi AP: `ESP32-S3_Drone_30fps`
+3. Use password: `drone2024`
+4. Device will be available at: `192.168.4.1`
 
-### 3. Просмотр видео
+### 3. Access Video Stream
 
-- **Веб-интерфейс**: `http://192.168.4.1:8080`
-- **WebSocket URL**: `ws://192.168.4.1:8080`
-- **Мобильный клиент**: Используйте `drone_client.html`
+- **Web Interface**: Open browser to `http://192.168.4.1:8080/`
+- **Direct WebSocket**: Connect to `ws://192.168.4.1:8080`
+- **Built-in Client**: Included web interface with protocol comparison
 
-## 🌐 **Клиенты для подключения**
+## 💻 **Client Integration Examples**
 
-### Встроенный веб-интерфейс 🏆
+### Web Browser Client (Built-in)
 
-Откройте браузер и перейдите по адресу `http://192.168.4.1:8080`:
+The device includes a responsive web interface accessible at `http://192.168.4.1:8080/`:
 
-✅ **Функции:**
+- Real-time video display
+- Connection status monitoring
+- Frame rate and statistics
+- Automatic reconnection handling
 
-- 🎥 Реалтайм видео поток 30 FPS
-- 📊 Статистика подключения и FPS
-- 🔄 Автоматическое переподключение
-- 📸 Функция скриншотов
-- 🔍 Полноэкранный режим
-- 📋 Лог подключения
+### JavaScript WebSocket Client
 
-### Пользовательский HTML клиент
+```javascript
+class ESP32CameraClient {
+  constructor(ip = "192.168.4.1") {
+    this.wsUrl = `ws://${ip}:8080`;
+    this.ws = null;
+    this.frameCount = 0;
+  }
 
-Используйте файл `drone_client.html` для кастомного интерфейса:
+  connect() {
+    this.ws = new WebSocket(this.wsUrl);
+    this.ws.binaryType = "arraybuffer";
 
-- Современный Material Design
-- Адаптивная верстка для мобильных
-- Расширенная статистика
-- Настройки качества
+    this.ws.onopen = () => {
+      console.log("Connected to ESP32-S3 camera");
+    };
 
-### JavaScript WebSocket API
-
-````javascript
-// Базовое подключение
-const ws = new WebSocket('ws://192.168.4.1:8080');
-ws.binaryType = 'arraybuffer';
-
-ws.onmessage = function(event) {
-    if (event.data instanceof ArrayBuffer) {
-        // Получен JPEG кадр
-        const blob = new Blob([event.data], {type: 'image/jpeg'});
-        const url = URL.createObjectURL(blob);
-        imageElement.src = url;
-    }
-};
-```    this.ws.onmessage = (event) => {
+    this.ws.onmessage = (event) => {
       if (event.data instanceof ArrayBuffer) {
         this.displayFrame(event.data);
         this.frameCount++;
@@ -142,7 +119,7 @@ ws.onmessage = function(event) {
 // Usage
 const camera = new ESP32CameraClient();
 camera.connect();
-````
+```
 
 ### Python Client Integration
 
