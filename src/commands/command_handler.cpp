@@ -157,7 +157,7 @@ void CommandHandler::handleWiFiCommands(const String& command) {
         Serial.printf("[WiFi] 📶 Channel: %d\n", WiFi.channel());
         Serial.printf("[WiFi] 📊 Mode: %s\n", (WiFi.getMode() & WIFI_AP) ? "AP active" : "AP inactive");
         Serial.printf("[WiFi] 🔋 Power: %d dBm\n", WiFi.getTxPower());
-        Serial.printf("[WiFi] ✅ Stability: %s\n", wifi.isStable() ? "STABLE" : "ISSUES");
+        Serial.printf("[WiFi] ✅ Stability: %s\n", wifi.isConnected() ? "STABLE" : "ISSUES");
     }
     else if (command == "wifireset") {
         Serial.println("[WiFi] 🔄 Full WiFi configuration reset...");
@@ -169,7 +169,7 @@ void CommandHandler::handleWiFiCommands(const String& command) {
         Serial.println("[WiFi] ✅ WiFi restarted. Try connecting again.");
     }
     else if (command == "wificlients") {
-        wifi.showConnectedClients();
+        wifi.checkStability();
     }
 }
 
