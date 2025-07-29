@@ -45,17 +45,18 @@ void OV2640Camera::initializeConfig() {
     
     // Settings optimized for MAXIMUM frame rate and immediate delivery
     config_.frame_size = FRAMESIZE_HQVGA;  // 640x480 - smallest size for maximum speed
-    config_.jpeg_quality = 10; // Higher compression for smallest files and fastest transmission
-    config_.fb_count = 1; // Double buffer for immediate processing
-    
+    config_.jpeg_quality = 20; // Higher compression for smallest files and fastest transmission
+    config_.fb_count = 2; // Double buffer for immediate processing
+    config_.fb_location = CAMERA_FB_IN_PSRAM;
+
     // Memory allocation - prefer PSRAM if available, otherwise use DRAM
-    if (ESP.getFreePsram() > 0) {
-        config_.fb_location = CAMERA_FB_IN_PSRAM;
-        ESP_LOGI(TAG, "Using PSRAM for frame buffers");
-    } else {
-        config_.fb_location = CAMERA_FB_IN_DRAM;
-        ESP_LOGW(TAG, "Using DRAM for frame buffers (no PSRAM available)");
-    }
+    // if (ESP.getFreePsram() > 0) {
+    //     config_.fb_location = CAMERA_FB_IN_PSRAM;
+    //     ESP_LOGI(TAG, "Using PSRAM for frame buffers");
+    // } else {
+    //     config_.fb_location = CAMERA_FB_IN_DRAM;
+    //     ESP_LOGW(TAG, "Using DRAM for frame buffers (no PSRAM available)");
+    // }
     config_.grab_mode = CAMERA_GRAB_WHEN_EMPTY;  // Always get latest frame for real-time
 }
 
