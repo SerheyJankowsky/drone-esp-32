@@ -34,11 +34,11 @@ namespace CameraPins {
 
 // Camera configuration constants
 namespace CameraConfig {
-    constexpr uint32_t XCLK_FREQ_HZ = 24000000;  // Increased for 30fps
-    constexpr uint8_t TARGET_FPS = 30;
-    constexpr uint32_t FRAME_INTERVAL_MS = 1000 / TARGET_FPS;  // ~33ms
-    constexpr uint8_t JPEG_QUALITY = 8;  // Optimized for 30fps
-    constexpr uint8_t FRAME_BUFFER_COUNT = 3;  // Triple buffering for smooth 30fps
+    constexpr uint32_t XCLK_FREQ_HZ = 20000000;  // Optimized for stable 20fps
+    constexpr uint8_t TARGET_FPS = 20;
+    constexpr uint32_t FRAME_INTERVAL_MS = 1000 / TARGET_FPS;  // 50ms
+    constexpr uint8_t JPEG_QUALITY = 12;  // Balanced quality for 20fps stability
+    constexpr uint8_t FRAME_BUFFER_COUNT = 2;  // Double buffering for 20fps
     constexpr size_t MIN_FREE_HEAP = 50000;  // Minimum heap threshold
 }
 

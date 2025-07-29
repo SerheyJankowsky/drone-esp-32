@@ -449,8 +449,17 @@ void WebSocketServer::sendWebPage(WiFiClient& client) {
 void WebSocketServer::streamVideoFrame(camera_fb_t* fb) {
     if (!running_ || !fb) return;
     
-    frameCounter_++;
     unsigned long currentTime = millis();
+    
+    // СТРОГОЕ ОГРАНИЧЕНИЕ 20 FPS - интервал между кадрами должен быть не менее 50ms
+    const unsigned long FRAME_INTERVAL_MS = 50; // 1000ms / 20fps = 50ms
+    
+    if (currentTime - lastFrameTime_ < FRAME_INTERVAL_MS) {
+        // Слишком рано для следующего кадра - пропускаем
+        return;
+    }
+    
+    frameCounter_++;
     
     // Стабильная отправка 20fps - проверяем качество соединения
     static unsigned long lastFrameDropWarning = 0;
@@ -489,14 +498,17 @@ void WebSocketServer::streamVideoFrame(camera_fb_t* fb) {
     // Статистика отправки кадров
     static unsigned long lastStatsTime = 0;
     static int total_frames_sent = 0;
+    static int frames_this_period = 0;
+    
     total_frames_sent += successful_sends;
+    frames_this_period++;
     
     if (currentTime - lastStatsTime >= 10000) { // Каждые 10 секунд
-        float avg_fps = (float)frameCounter_ / 10.0f;
-        Serial.printf("[WS] 20fps Stream: %.1f actual fps, %d frames sent to clients\n", 
-                     avg_fps, total_frames_sent);
+        float actual_fps = (float)frames_this_period / 10.0f;
+        Serial.printf("[WS] 20fps Limited Stream: %.1f actual fps, %d frames sent to clients\n", 
+                     actual_fps, total_frames_sent);
         
-        frameCounter_ = 0;
+        frames_this_period = 0;
         total_frames_sent = 0;
         lastStatsTime = currentTime;
     }

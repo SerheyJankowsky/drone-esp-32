@@ -40,13 +40,13 @@ void OV2640Camera::initializeConfig() {
     config_.pin_sccb_scl = CameraPins::SIOC;
     config_.pin_pwdn = CameraPins::PWDN;
     config_.pin_reset = CameraPins::RESET;
-    config_.xclk_freq_hz = 20000000; // Maximum clock frequency for highest frame rate
+    config_.xclk_freq_hz = 20000000; // Optimized clock frequency for stable 20fps
     config_.pixel_format = PIXFORMAT_JPEG;
     
-    // Settings optimized for MAXIMUM frame rate and immediate delivery
-    config_.frame_size = FRAMESIZE_HQVGA;  // 640x480 - smallest size for maximum speed
-    config_.jpeg_quality = 20; // Higher compression for smallest files and fastest transmission
-    config_.fb_count = 2; // Double buffer for immediate processing
+    // Settings optimized for STABLE 20fps delivery
+    config_.frame_size = FRAMESIZE_HQVGA;  // 640x480 - good balance between quality and performance
+    config_.jpeg_quality = 12; // Balanced compression for stable transmission at 20fps
+    config_.fb_count = 2; // Double buffer for stable processing at 20fps
     config_.fb_location = CAMERA_FB_IN_PSRAM;
 
     // Memory allocation - prefer PSRAM if available, otherwise use DRAM
@@ -66,7 +66,7 @@ bool OV2640Camera::initialize() {
         return true;
     }
 
-    ESP_LOGI(TAG, "Initializing OV2640 camera for 30fps operation...");
+    ESP_LOGI(TAG, "Initializing OV2640 camera for stable 20fps operation...");
     
     if (!checkMemoryConstraints()) {
         last_error_ = CameraError::MEMORY_ALLOCATION_FAILED;
@@ -92,7 +92,7 @@ bool OV2640Camera::initialize() {
     stats_.reset();
     last_frame_time_ = millis();
     
-    ESP_LOGI(TAG, "Camera initialized successfully for 30fps operation!");
+    ESP_LOGI(TAG, "Camera initialized successfully for stable 20fps operation!");
     printCameraInfo();
     
     return true;
@@ -107,21 +107,21 @@ bool OV2640Camera::configureSensor() {
         return false;
     }
     
-    // Optimized sensor settings for high frame rate and quality
+    // Optimized sensor settings for stable 20fps and good quality
     sensor->set_brightness(sensor, 0);      // -2 to 2
-    sensor->set_contrast(sensor, 2);        // Увеличен для черно-белого режима
-    sensor->set_saturation(sensor, -2);     // Минимальная для черно-белого режима
-    sensor->set_special_effect(sensor, 2);  // Grayscale effect для уменьшения размера
+    sensor->set_contrast(sensor, 1);        // Умеренный контраст для стабильности
+    sensor->set_saturation(sensor, -1);     // Слегка уменьшенная для меньшего размера файла
+    sensor->set_special_effect(sensor, 0);  // No special effects for natural colors
     sensor->set_whitebal(sensor, 1);        // Auto white balance
     sensor->set_awb_gain(sensor, 1);        // Auto white balance gain
     sensor->set_wb_mode(sensor, 0);         // Auto mode
     sensor->set_exposure_ctrl(sensor, 1);   // Auto exposure
-    sensor->set_aec2(sensor, 1);            // Enable AEC2 for better performance
+    sensor->set_aec2(sensor, 1);            // Enable AEC2 for stable exposure
     sensor->set_ae_level(sensor, 0);        // Auto exposure level
-    sensor->set_aec_value(sensor, 200);     // Faster exposure for 30fps
+    sensor->set_aec_value(sensor, 300);     // Optimized exposure for stable 20fps
     sensor->set_gain_ctrl(sensor, 1);       // Auto gain
     sensor->set_agc_gain(sensor, 0);        // Auto gain ceiling
-    sensor->set_gainceiling(sensor, (gainceiling_t)2); // Moderate gain ceiling
+    sensor->set_gainceiling(sensor, (gainceiling_t)2); // Moderate gain ceiling for stability
     sensor->set_bpc(sensor, 1);             // Black pixel correction
     sensor->set_wpc(sensor, 1);             // White pixel correction
     sensor->set_raw_gma(sensor, 1);         // Raw gamma
@@ -131,9 +131,9 @@ bool OV2640Camera::configureSensor() {
     sensor->set_dcw(sensor, 1);             // Downsize enable
     sensor->set_colorbar(sensor, 0);        // No color bar
     
-    ESP_LOGI(TAG, "🎬 Sensor configured for GRAYSCALE mode (smaller file sizes)");
-    ESP_LOGI(TAG, "📊 Expected JPEG size reduction: 30-50%% vs color mode");
-    ESP_LOGI(TAG, "✅ Sensor configured for optimal 30fps performance");
+    ESP_LOGI(TAG, "🎬 Sensor configured for stable 20fps with balanced quality");
+    ESP_LOGI(TAG, "📊 JPEG quality optimized for consistent frame sizes");
+    ESP_LOGI(TAG, "✅ Sensor configured for optimal 20fps performance");
     return true;
 }
 
@@ -159,8 +159,13 @@ std::unique_ptr<camera_fb_t, std::function<void(camera_fb_t*)>> OV2640Camera::ca
     
     frame_start_time_ = millis();
     
-    // Remove frame rate limiting here - let main loop control timing
-    // This prevents double-limiting that causes frame skipping
+    // СТРОГОЕ ОГРАНИЧЕНИЕ 20 FPS на уровне камеры
+    const unsigned long CAMERA_FRAME_INTERVAL_MS = 50; // 1000ms / 20fps = 50ms
+    
+    if (frame_start_time_ - last_frame_time_ < CAMERA_FRAME_INTERVAL_MS) {
+        // Слишком рано для следующего кадра - возвращаем nullptr
+        return nullptr;
+    }
     
     camera_fb_t* fb = esp_camera_fb_get();
     if (!fb) {
@@ -176,8 +181,8 @@ std::unique_ptr<camera_fb_t, std::function<void(camera_fb_t*)>> OV2640Camera::ca
         return nullptr;
     }
     
-    // ПРОВЕРКА РАЗМЕРА КАДРА для предотвращения разрывов WebSocket
-    const size_t MAX_SAFE_FRAME_SIZE = 32768; // 32KB максимум для стабильности
+    // ПРОВЕРКА РАЗМЕРА КАДРА для стабильной работы на 20fps
+    const size_t MAX_SAFE_FRAME_SIZE = 40960; // 40KB максимум для стабильности на 20fps
     
     if (fb->len > MAX_SAFE_FRAME_SIZE) {
         ESP_LOGW(TAG, "Large frame detected: %zu bytes (max safe: %zu)", fb->len, MAX_SAFE_FRAME_SIZE);
@@ -189,9 +194,9 @@ std::unique_ptr<camera_fb_t, std::function<void(camera_fb_t*)>> OV2640Camera::ca
         sensor_t* sensor = esp_camera_sensor_get();
         if (sensor) {
             int current_quality = sensor->status.quality;
-            if (current_quality < 25) { // Увеличиваем сжатие
-                sensor->set_quality(sensor, current_quality + 5);
-                ESP_LOGI(TAG, "Increased JPEG compression to quality %d", current_quality + 5);
+            if (current_quality < 20) { // Увеличиваем сжатие
+                sensor->set_quality(sensor, current_quality + 3);
+                ESP_LOGI(TAG, "Increased JPEG compression to quality %d for 20fps stability", current_quality + 3);
             }
         }
         
@@ -434,6 +439,7 @@ void OV2640Camera::printCameraInfo() const {
     ESP_LOGI(TAG, "Frame buffers: %d", config_.fb_count);
     ESP_LOGI(TAG, "XCLK frequency: %lu Hz", config_.xclk_freq_hz);
     ESP_LOGI(TAG, "Target FPS: %d", CameraConfig::TARGET_FPS);
+    ESP_LOGI(TAG, "Frame interval: %lu ms", CameraConfig::FRAME_INTERVAL_MS);
     ESP_LOGI(TAG, "Pixel format: %s", config_.pixel_format == PIXFORMAT_JPEG ? "JPEG" : "RAW");
     ESP_LOGI(TAG, "===========================");
 }
