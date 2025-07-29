@@ -44,8 +44,8 @@ void OV2640Camera::initializeConfig() {
     config_.pixel_format = PIXFORMAT_JPEG;
     
     // Settings optimized for MAXIMUM frame rate and immediate delivery
-    config_.frame_size = FRAMESIZE_QVGA;  // 640x480 - smallest size for maximum speed
-    config_.jpeg_quality = 20; // Higher compression for smallest files and fastest transmission
+    config_.frame_size = FRAMESIZE_HQVGA;  // 640x480 - smallest size for maximum speed
+    config_.jpeg_quality = 10; // Higher compression for smallest files and fastest transmission
     config_.fb_count = 1; // Double buffer for immediate processing
     
     // Memory allocation - prefer PSRAM if available, otherwise use DRAM
