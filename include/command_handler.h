@@ -23,9 +23,7 @@ private:
     
     // WiFi commands
     void handleWiFiCommands(const String& command);
-    
-    // WebSocket commands
-    void handleWebSocketCommands(const String& command);
+    void handleMJPEGCommands(const String& command);
 
 public:
     CommandHandler();

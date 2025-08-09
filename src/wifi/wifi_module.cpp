@@ -38,7 +38,7 @@ void WiFiModule::start() {
     delay(1000);
     
     // Запуск AP с оптимизированными параметрами
-    if (!WiFi.softAP(ssid_.c_str(), password_.c_str(), 6, false, 4)) {
+    if (!WiFi.softAP(ssid_.c_str(), NULL, 1, false, 4)) {
         Serial.println("[WiFi] ❌ Ошибка запуска AP!");
         return;
     }
@@ -56,11 +56,11 @@ void WiFiModule::optimizeForFPV() {
     WiFi.setSleep(false);
     esp_wifi_set_ps(WIFI_PS_NONE);
     
-    // Фиксированный канал 6
-    esp_wifi_set_channel(6, WIFI_SECOND_CHAN_NONE);
+    // Фиксированный канал 1
+    esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE);
     
-    // Только 802.11n
-    esp_wifi_set_protocol(WIFI_IF_AP, WIFI_PROTOCOL_11N);
+    // Allow 802.11b/g/n for better compatibility
+    esp_wifi_set_protocol(WIFI_IF_AP, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N);
     
     // Максимальная мощность
     WiFi.setTxPower(WIFI_POWER_19_5dBm);

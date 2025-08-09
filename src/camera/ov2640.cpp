@@ -44,9 +44,9 @@ void OV2640Camera::initializeConfig() {
     config_.pixel_format = PIXFORMAT_JPEG;
     
     // Settings optimized for STABLE 20fps delivery
-    config_.frame_size = FRAMESIZE_HQVGA;  // 640x480 - good balance between quality and performance
-    config_.jpeg_quality = 12; // Balanced compression for stable transmission at 20fps
-    config_.fb_count = 2; // Double buffer for stable processing at 20fps
+    config_.frame_size = FRAMESIZE_HD;  // 1280x720 - good balance between quality and performance
+    config_.jpeg_quality = 25; // Increased compression for stable transmission at 20fps
+    config_.fb_count = 3; // Triple buffer for stable processing at 20fps
     config_.fb_location = CAMERA_FB_IN_PSRAM;
 
     // Memory allocation - prefer PSRAM if available, otherwise use DRAM
@@ -99,42 +99,48 @@ bool OV2640Camera::initialize() {
 }
 
 bool OV2640Camera::configureSensor() {
-    sensor_t* sensor = esp_camera_sensor_get();
-    if (sensor == nullptr) {
+    sensor_t * s = esp_camera_sensor_get();
+    if (s == nullptr) {
         last_error_ = CameraError::SENSOR_NOT_FOUND;
-        last_error_message_ = "Failed to get camera sensor";
-        ESP_LOGE(TAG, "Failed to get camera sensor");
+        last_error_message_ = "Failed to get sensor";
+        ESP_LOGE(TAG, "Failed to get sensor");
         return false;
     }
-    
-    // Optimized sensor settings for stable 20fps and good quality
-    sensor->set_brightness(sensor, 0);      // -2 to 2
-    sensor->set_contrast(sensor, 1);        // Умеренный контраст для стабильности
-    sensor->set_saturation(sensor, -1);     // Слегка уменьшенная для меньшего размера файла
-    sensor->set_special_effect(sensor, 0);  // No special effects for natural colors
-    sensor->set_whitebal(sensor, 1);        // Auto white balance
-    sensor->set_awb_gain(sensor, 1);        // Auto white balance gain
-    sensor->set_wb_mode(sensor, 0);         // Auto mode
-    sensor->set_exposure_ctrl(sensor, 1);   // Auto exposure
-    sensor->set_aec2(sensor, 1);            // Enable AEC2 for stable exposure
-    sensor->set_ae_level(sensor, 0);        // Auto exposure level
-    sensor->set_aec_value(sensor, 300);     // Optimized exposure for stable 20fps
-    sensor->set_gain_ctrl(sensor, 1);       // Auto gain
-    sensor->set_agc_gain(sensor, 0);        // Auto gain ceiling
-    sensor->set_gainceiling(sensor, (gainceiling_t)2); // Moderate gain ceiling for stability
-    sensor->set_bpc(sensor, 1);             // Black pixel correction
-    sensor->set_wpc(sensor, 1);             // White pixel correction
-    sensor->set_raw_gma(sensor, 1);         // Raw gamma
-    sensor->set_lenc(sensor, 1);            // Lens correction
-    sensor->set_hmirror(sensor, 0);         // No horizontal mirror
-    sensor->set_vflip(sensor, 0);           // No vertical flip
-    sensor->set_dcw(sensor, 1);             // Downsize enable
-    sensor->set_colorbar(sensor, 0);        // No color bar
-    
-    ESP_LOGI(TAG, "🎬 Sensor configured for stable 20fps with balanced quality");
-    ESP_LOGI(TAG, "📊 JPEG quality optimized for consistent frame sizes");
-    ESP_LOGI(TAG, "✅ Sensor configured for optimal 20fps performance");
+    // Set sensor settings
+    s->set_vflip(s, 1);       // Flip vertically
+    s->set_hmirror(s, 0);     // No horizontal mirror
+    s->set_brightness(s, 1);  //-2 to 2
+    s->set_contrast(s, 1);    //-2 to 2
+    s->set_saturation(s, 0);  //-2 to 2
+    s->set_special_effect(s, 0); // 0 to 6 (0 - no effect)
+    s->set_whitebal(s, 1);    // 0 = disable, 1 = enable
+    s->set_awb_gain(s, 1);    // 0 = disable, 1 = enable
+    s->set_wb_mode(s, 0);     // 0 to 4 (0 - auto)
+    s->set_exposure_ctrl(s, 1); // 0 = disable, 1 = enable
+    s->set_aec2(s, 0);        // 0 = disable, 1 = enable
+    s->set_ae_level(s, 0);    // -2 to 2
+    s->set_aec_value(s, 300); // 0 to 1200
+    s->set_gain_ctrl(s, 1);   // 0 = disable, 1 = enable
+    s->set_agc_gain(s, 0);    // 0 to 30
+    s->set_gainceiling(s, (gainceiling_t)0); // 0 to 6
+    s->set_bpc(s, 0);         // 0 = disable, 1 = enable
+    s->set_wpc(s, 1);         // 0 = disable, 1 = enable
+    s->set_raw_gma(s, 1);     // 0 = disable, 1 = enable
+    s->set_lenc(s, 1);        // 0 = disable, 1 = enable
     return true;
+}
+
+camera_fb_t* OV2640Camera::getFrameBuffer() {
+    if (!initialized_.load()) {
+        return nullptr;
+    }
+    return esp_camera_fb_get();
+}
+
+void OV2640Camera::returnFrameBuffer(camera_fb_t* fb) {
+    if (fb) {
+        esp_camera_fb_return(fb);
+    }
 }
 
 void OV2640Camera::deinitialize() {
