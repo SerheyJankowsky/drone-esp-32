@@ -5,18 +5,15 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include "ov2640.h"
-#include "websocket_server.h"
 #include "wifi_module.h"
 
 class TaskManager {
 private:
     // Task handles
     TaskHandle_t videoStreamTaskHandle;
-    TaskHandle_t webSocketTaskHandle;
     
     // Component references
     OV2640Camera* camera;
-    WebSocketServer* wsServer;
     WiFiModule* wifi;
     
     // Task control flags
@@ -26,13 +23,11 @@ private:
     
     // Task functions (static for FreeRTOS)
     static void videoStreamTask(void* parameter);
-    static void webSocketTask(void* parameter);
     
     // Task parameters structure
     struct TaskParams {
         TaskManager* manager;
         OV2640Camera* camera;
-        WebSocketServer* wsServer;
         WiFiModule* wifi;
     };
     
@@ -43,7 +38,7 @@ public:
     ~TaskManager();
     
     // Task lifecycle
-    bool initialize(OV2640Camera* cam, WebSocketServer* ws, WiFiModule* wf);
+    bool initialize(OV2640Camera* cam, WiFiModule* wf);
     void update();
     void stop();
     

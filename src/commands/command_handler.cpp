@@ -67,9 +67,9 @@ void CommandHandler::processCommand(const String& command) {
         return;
     }
     
-    // WebSocket commands
-    if (command.startsWith("web") || command == "clients" || command.startsWith("ws")) {
-        handleWebSocketCommands(command);
+    // MJPEG commands
+    if (command.startsWith("mjpeg")) {
+        handleMJPEGCommands(command);
         return;
     }
     
@@ -173,20 +173,10 @@ void CommandHandler::handleWiFiCommands(const String& command) {
     }
 }
 
-void CommandHandler::handleWebSocketCommands(const String& command) {
-    auto& wsServer = systemManager->getWebSocketServer();
-    
-    if (command == "webstats") {
-        Serial.printf("[WS] WebSocket server: RUNNING on port 8080\n");
-        Serial.printf("[WS] Connected clients: %d/3\n", wsServer.getConnectedClients());
-        Serial.println("[WS] Streaming video frames to connected clients");
-    }
-    else if (command == "clients") {
-        Serial.printf("[WS] Active WebSocket clients: %d/3\n", wsServer.getConnectedClients());
-    }
-    else if (command == "wstest") {
-        wsServer.sendStatusUpdate();
-        Serial.println("[TEST] Sent test message to all WebSocket clients");
+void CommandHandler::handleMJPEGCommands(const String& command) {
+    if (command == "mjpegstatus") {
+        Serial.println("[MJPEG] MJPEG server is RUNNING on port 80");
+        Serial.println("[MJPEG] Stream URL: http://192.168.4.1/stream");
     }
 }
 

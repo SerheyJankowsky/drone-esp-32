@@ -78,6 +78,11 @@ enum class CameraError {
 using FrameCallback = std::function<void(camera_fb_t*)>;
 
 class OV2640Camera {
+public:
+    // Public methods for frame access
+    camera_fb_t* getFrameBuffer();
+    void returnFrameBuffer(camera_fb_t* fb);
+
 private:
     camera_config_t config_;
     std::atomic<bool> initialized_{false};
