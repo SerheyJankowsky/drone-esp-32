@@ -66,9 +66,14 @@ void CommandHandler::processCommand(const String& command) {
         handleWiFiCommands(command);
         return;
     }
+
+    if (command.startsWith("fc")) {
+        handleFlightControllerCommands(command);
+        return;
+    }
     
-    // MJPEG commands
-    if (command.startsWith("mjpeg")) {
+    // WebSocket commands
+    if (command.startsWith("web") || command == "clients" || command.startsWith("ws")) {
         handleMJPEGCommands(command);
         return;
     }
@@ -177,6 +182,15 @@ void CommandHandler::handleMJPEGCommands(const String& command) {
     if (command == "mjpegstatus") {
         Serial.println("[MJPEG] MJPEG server is RUNNING on port 80");
         Serial.println("[MJPEG] Stream URL: http://192.168.4.1/stream");
+    }
+}
+
+void CommandHandler::handleFlightControllerCommands(const String& command) {
+    auto& fc = systemManager->getFlightController();
+    
+    if (command == "fctest") {
+        fc.testConnection();
+        Serial.println("[CMD] Sent test command to flight controller.");
     }
 }
 

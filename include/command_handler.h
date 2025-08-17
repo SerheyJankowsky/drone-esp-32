@@ -24,6 +24,7 @@ private:
     // WiFi commands
     void handleWiFiCommands(const String& command);
     void handleMJPEGCommands(const String& command);
+    void handleFlightControllerCommands(const String& command);
 
 public:
     CommandHandler();

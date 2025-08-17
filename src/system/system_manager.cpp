@@ -44,8 +44,13 @@ bool SystemManager::initialize() {
     mjpegServer.start(&camera);
     Serial.printf("✅ [SUCCESS] MJPEG server running at http://%s/\n", WiFi.softAPIP().toString().c_str());
 
+    // Initialize Flight Controller
+    Serial.println("✈️  [INIT] Step 4/5: Initializing Flight Controller...");
+    flightController.initialize();
+    flightController.testConnection();
+
     // Initialize dual-core task manager
-    Serial.println("⚙️  [INIT] Step 4/4: Starting dual-core task manager...");
+    Serial.println("⚙️  [INIT] Step 5/5: Starting dual-core task manager...");
     delay(500);
     if (!taskManager.initialize(&camera, &wifi)) {
         Serial.println("❌ [ERROR] Failed to initialize task manager");
@@ -69,6 +74,9 @@ void SystemManager::update() {
     
     // Handle MJPEG clients
     mjpegServer.handleClients();
+    
+    // Update Flight Controller
+    flightController.update();
     
     // Check WiFi stability
     wifi.checkStability();

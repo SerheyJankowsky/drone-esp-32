@@ -5,14 +5,16 @@
 #include "task_manager.h"
 #include "wifi_module.h"
 #include "ov2640.h"
-#include "mjpeg_server.h" // Replaced WebSocket with MJPEG
+#include "mjpeg_server.h"
+#include "flight_controller.h"
 
 class SystemManager {
 private:
     TaskManager taskManager;
     WiFiModule wifi;
     OV2640Camera camera;
-    MJPEGServer mjpegServer; // Replaced wsServer
+    MJPEGServer mjpegServer;
+    FlightController flightController;
     
     bool system_initialized;
     unsigned long last_stats_log;
@@ -35,6 +37,7 @@ public:
     // Component access
     WiFiModule& getWiFi() { return wifi; }
     OV2640Camera& getCamera() { return camera; }
-    MJPEGServer& getMJPEGServer() { return mjpegServer; } // New getter
+    MJPEGServer& getMJPEGServer() { return mjpegServer; }
+    FlightController& getFlightController() { return flightController; }
     TaskManager& getTaskManager() { return taskManager; }
 };
